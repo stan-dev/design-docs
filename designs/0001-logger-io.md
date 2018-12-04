@@ -2,13 +2,9 @@
 
 **Functional and Technical Specifications**
 
-Top-level table of contents here
-
 **_Motivation_**
 
 This is a proposal for static, logger-style output to handle data and message output from the Stan services.  The goal is to make it easier to do three things
-
-
 
 1.  Add a new type of data output to an existing service.
 1.  Add a new algorithm, service, model method, etc.
@@ -24,8 +20,6 @@ The proposal is to use a singleton to route all output in the style of tradition
 
 Stan's output can be usefully divided into two types of messages:
 
-
-
 *   _Message output_:  text messages for information, warnings, and errors,
     *    includes everything printed to the console in CmdStan
 *   _Data output_:  string data for headers and numerical output for draws, adaptation, etc.
@@ -35,16 +29,12 @@ Stan's output can be usefully divided into two types of messages:
 
 There are two types of clients for the logger object:
 
-
-
 1.  _Writers/Producers_:  The core algorithms and services use the logger to write output.
 1.  _Readers/Consumers_: The interfaces use the logger to configure the logger and read output.
 
 **Message Output**
 
 Message output will consist of two components:
-
-
 
 1.  _Log level_:  an enum with values and application
     1.  TRACE: we won't use this yet
@@ -59,8 +49,6 @@ The debug level will allow interfaces to filter and route output appropriately. 
 
 Examples of log messages:
 
-
-
 *   2018-08-10 10:35|WARN|Found possible non-linear transformation which may need Jacobian adjustment on left-hand side of line 127:   exp(x) ~ normal(0, 1);
 *   2018-08-10 10:36|ERROR|Expected positive scale expression on line 127, found sigma = -0.03
 *   2018-08-10 10:36|INFO|Iteration 200/2000 (warmup) 2 seconds elapsed; projected completion 18 seconds
@@ -69,15 +57,11 @@ Examples of log messages:
 
 Data output will consist of two components
 
-
-
 1.  _Tags_:  one or more tags for output (e.g., parameters, sampling)
 1.  _Data shape description_:  shape and size of data (e.g., vector<4>)
 1.  _Data payload_:  a sequence of comma-separated numerical or string values
 
 Examples of data messages:
-
-
 
 *   2018-08-10 10:35|param head|theta.0,theta.1,theta.2,theta.3
 *   2018-08-10 10:35|param constrain|4.239,1.87493,2.17e-19,3.14
@@ -89,16 +73,12 @@ Data will be row major for arrays and column major for matrices to match our int
 
 Stan's core C++ code will be responsible for two things:
 
-
-
 1.  _Create and configure logger_:  create logger singleton and configure it for output format (timestamp style, division style), available tags, and numerical precision
 1.  _Writing messages_:  writing log messages using the logger singleton, tags, and Stan data types like std::vector and Eigen::Matrix
 
 **Message Consumer Interface**
 
 The message consumer interface is responsible for one thing:
-
-
 
 1.  _Configuring logger routing_: setting up targets for the log messages, which may either
     1.  use built-in types like file loggers and standard output loggers, or
@@ -120,52 +100,36 @@ The proposal needs to handle the current output sources, which originate in thre
 
 **Model class output**
 
-
-
 *   K×N constrained/unconstrained/algorithm-defined augmented parameters
 *   K×K×N for same (HMC mass matrix, however many times you want to output it, or ADVI fullrank covariance matrix).
 
 **Algorithm output**
 
-
-
 *   small tuples (Q metrics × N iterations or sub-iterations where Q is 1-10 in size so not a performance issue).
 
 **Services output**
-
-
 
 *   timing information in a std::vector
 
 **Math library output**
 
-
-
 *   logger messages in text (Carpenter:  not sure what source there is other than model, algorithm, and services)
 
 **Services-defined:**
-
-
 
 *   `double` values representing the time taken for P algorithm stages (warmup, sampling in MCMC).
 *   `struct` holding the config.
 
 **Model-file defined:**
 
-
-
 *   K parameter names, provided once
 
 **Model-file defined for sampling**:
-
-
 
 *   K _model_ ('constrained') parameter values, provided per-iteration, so ultimately K×N, with Niterations.
 *   K _algorithm_ ('unconstrained') parameter values, provided per-iteration so ultimately K×N
 
 **Model-file defined for optimization**:
-
-
 
 *   K _model_ ('constrained') parameter values, provided once as an estimate
 *   K _model_ ('constrained') parameter values, provided per-iteration if requested
@@ -174,8 +138,6 @@ The proposal needs to handle the current output sources, which originate in thre
 
 **Model-file defined for ADVI**:
 
-
-
 *   K _model_ ('constrained') parameter values, provided once as an estimate
 *   K _model_ ('constrained') parameter values, provided per iteration if requested (so K×N.
 *   K×K covariance estimate, provided once at a given point.
@@ -183,22 +145,16 @@ The proposal needs to handle the current output sources, which originate in thre
 
 **Model-file defined, for HMC**:
 
-
-
 *   K _algorithm_ ('unconstrained') parameter values, provided per iteration if requested so ultimately K×N
 *   K _momentum_ parameter values, provided per iteration if requested so ultimately K×N
 *   K×K or 1×K mass matrix, provided on request (at most K×K×N).
 
 **Model-file defined, for whatever algorithm:**
 
-
-
 *   K×M _algorithm_ parameter values holding state per N algorithm steps.
 *   K _gradient_ parameter values, provided per iteration if requested so ultimately K×N (for any gradient-based algorithm).
 
 **Algorithm-defined for HMC**:
-
-
 
 *   iteration, per-iteration
 *   adapted stepsize, `double`, per-iteration during warmup (fixed in sampling), so Nw
@@ -210,8 +166,6 @@ The proposal needs to handle the current output sources, which originate in thre
 *   divergence, N, per-iteration
 
 **Algorithm-defined for BFGS/LBFGS**:
-
-
 
 *   iteration
 *   log-density, N, per-iteration
@@ -225,16 +179,12 @@ The proposal needs to handle the current output sources, which originate in thre
 
 **Algorithm-defined, for Newton optimization**:
 
-
-
 *   … uh, same informational message on initialization failure as MCMC… (?)
 *   iteration,
 *   log-density, N
 *   improvement in the log-density, N
 
 **Algorithm-defined, for ADVI:**
-
-
 
 *   iteration, N
 *   ELBO, N
@@ -255,8 +205,6 @@ The proposal needs to handle the current output sources, which originate in thre
 
 There is one overarching theme here that has come about in my own research and deserves extra scrutiny - I'm proposing we use a popular C++ logging library as the basis for our implementation. I will detail my thought process here before breaking out the 4 parts of the implementation because it's a very cross-cutting concern. [Spdlog](https://github.com/gabime/spdlog) is an MIT-licensed, fast, header-only C++ logging library that solves a few problems we would otherwise need to solve ourselves:
 
-
-
 1.  Various types of file-based sinks as well as a simple plug-in system for custom ones. This allows us to be flexible in our choice of encoding as it will be easy to switch in the future.
 1.  Global static logger instance registry.
 1.  A great API for all of the standard log levels, timestamps, etc.
@@ -274,123 +222,89 @@ Interfaces like RStan and PyStan will use spdlog's [existing sink creation and r
 
 We can work together a bit to come up with something convenient, but right now the way to configure Stan loggers from the interface side would be something like:
 
+```cpp
 #include <spdlog/sinks/basic_file_sink.h>
-
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 void init_loggers() {
-
  static_cast<void>(spdlog::stdout_color_mt("messages"));
-
  static_cast<void>(spdlog::basic_logger_mt("data", "data.log"));
-
 }
 
+```
 All we're doing here is registering two loggers, one called "messages" and another called "data" with spdlog (the "_mt" refers to the [multithreaded implementation](https://github.com/gabime/spdlog#asynchronous-logging)). In this process we're telling them each where to go - the first one will print colored messages to stdout and the 2nd will write to a file called data.log in whatever the current directory is. The interfaces can choose between files, sockets, stdout/stderr, or custom sinks wrapping callbacks by using the [predefined sinks or defining a custom one.](https://github.com/gabime/spdlog/wiki/4.-Sinks)
 
 
 ### Serialization
 
 We'll start by serializing to lightly structured ASCII using the builtin [fmt library](https://github.com/fmtlib/fmt). We will just need to serialize tags and a few kinds of data objects, as described further in the Developer API section. So this very thin "serialization layer" consists mostly of custom `operator<<` implementations for pre-existing classes. Here might be how we'd serialize tags and Eigen matrices:
-
+```cpp
 using std::ostream;
 
 enum class Tag { header, parameters, constrained };
 
 inline ostream &operator<<(ostream &os, const Tag &tag) {
-
  switch (tag) {
-
    case Tag::header:
-
      return os << "header";
-
    case Tag::parameters:
-
      return os << "parameters";
-
    case Tag::constrained:
-
      return os << "constrained";
-
  }
-
 }
 
 inline ostream &operator<<(ostream &os, const std::vector<Tag> &tags) {
-
  for (auto &&t : tags) {
-
    os << t << " ";
-
  }
-
  return os;
-
 }
 
 template <typename T, int R, int C>
-
 inline std::ostream &operator<<(std::ostream &os, const Eigen::Matrix<T, R, C> &m) {
-
  os << "Matrix<" << m.rows() << ", " << m.cols() << ">(";
-
  for (int i = 0; i < m.size() - 1; i++) {
-
    os << m(i) << ", ";
-
  }
-
  os << m(m.size() - 1) << ")";
-
  return os;
-
 }
-
+```
 
 ### Developer API
 
 Similar to spdlog's provided global static logger, we will have a global singleton functor for outputting data (with no registry necessary in this case, though its sole state will consist of a reference to the correct spdlog data logger). This will have one function available [0] that takes in a `std::vector` of tags (members of an enum) as the first argument with the data object to be emitted as the second. The key idea here being that a constellation of tags uniquely specifies the type of data being emitted and as such there is just one type of data associated with those tags. Under the hood, the call will present the spdlog data logger with a standardized format string encoding the list of tags and the data object, relying on its `operator<<` for eventual encoding.
 
+```cpp
 using namespace stan::log;
 
 emit_data({Tag::header, Tag::parameters},
-
          std::vector<std::string>{"theta0", "theta1", "theta2", "theta3"});
-
 Eigen::VectorXd theta(4);
-
 theta << 4, 5, 6, 7;
-
 emit_data({Tag::parameters, Tag::constrained}, theta);
+```
 
 Which emits this:
-
+```
 [2018-08-10 10:35:41.274] [data] [info] header parameters | theta0, theta1, theta2, theta3
-
 [2018-08-10 10:35:41.274] [data] [info] parameters constrained | Matrix<4, 1>(4, 5, 6, 7)
-
+```
 Obviously, exact formatting and naming TBD by whoever implements. Here is what the emit_data function should basically look like:
-
+```cpp
 /*
-
 * @tparam T type of data to be output; must implement operator<<
-
 * @param tags constellation of tags uniquely identifying this type of data
-
 * @param data data object to write out
-
 */
 
 template <typename T>
-
 inline void emit_data(std::vector<Tag> tags, const T &data) {
-
   auto data_logger = spdlog::get("data");
-
   data_logger->info("{}|{}", tags, data);
-
 }
+```
 
 [0] We could have more than one function if we decide we want to add "data levels" similar to log levels to aid in turning some output on or off, but I am not sure we need to do that initially. Please correct me if I'm wrong on this as I likely don't know enough yet! We can just add another overload to the function that additionally takes in a log level if need be.
 
