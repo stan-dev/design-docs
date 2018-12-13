@@ -1,3 +1,9 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
 # CmdStanPy Functional Specification
 
 CmdStanPy is a lightweight interface to Stan for Python users which
@@ -14,7 +20,7 @@ for CmdStanPy sampler function.
 
 - Easy to install,
   + minimal Python library dependencies: numpy, pandas
-  + Python code doesn't interface directly with C++, only calls compiled executables (using package `os`).
+  + Python code doesn't interface directly with c++, only calls compiled executables (using package `os`).
 
 ## Design considerations
 
@@ -28,7 +34,7 @@ for CmdStanPy sampler function.
 ## Assumptions
 
 - Initial version will use existing CmdStan interface to compile models and run sampler
-  + requires C++ compiler and `make`
+  + requires c++ compiler and `make`
   + requires composing call to compiled executable using current CmdStan syntax
 
 - Other packages will be used to analyze the sampler output.
@@ -87,6 +93,8 @@ Each chain produces one sample (set of draws).
 The samples from all chains in the run have exactly the same size and shape.
 The `posterior_sample` contains the mapping from chain ids to samples.
 The draws are stored in iteration order.
+
+
 The `posterior_sample` object provides functions which can access
 
 * all draws
@@ -99,44 +107,58 @@ sample is invalid.
 For a valid sample, all draws across all chains are used to estimate
 the posterior density.
 
-
+The Pandas module will be used to manage this information.
 
 ## Functions
 
 ### compile_file
 
 Compile Stan model, returning immutable instance of a compiled model.
+For the initial version, use CmdStan's `makefile` for program `Gnu make`.
+The makefile has rules which compile and link an executable program `my_model`
+from Stan program file `my_model.stan` in two steps:
+
+* call the `stanc` compiler which translates the Stan program to c++
+* call c++ to compile and link the generated c++ code
 
 ```
-model = compile_file(path = None, opt_level = {0,1,2,3}, ...)
+model = compile_file(path = None,
+                     opt_level = 0,
+                     ...)
 ```
 
-CmdStan's makefile task does this - given make target `foo` and file `foo.stan` the makefile will translate `foo.stan` to `foo.hpp`
-by calling the `stanc` compiler and then will compile and link the generated c++ code into executable `foo`.
-See files `github/stan-dev/cmdstan/makefile` and `github/stan-dev/cmdstan/make/program`
+##### parameters
 
+* `path` =  - string, must be valid pathname to Stan program file
+* `opt_level` = optimization level, the value of the `-o` flag for the c++ compiler
+
+##### makefile variables
+
+The files `github/stan-dev/cmdstan/makefile` and `github/stan-dev/cmdstan/make/program`
+contain the rules used to compile and link the program.
+The CmdStan makefile rule for compiling the Stan program to c++ is
+in file `github/stan-dev/cmdstan/make/program`, line 30:
 ```
-%.hpp : %.stan bin/stanc$(EXE)
-	@echo ''
-	@echo '--- Translating Stan model to C++ code ---'
-	$(WINE) bin/stanc$(EXE) $(STANCFLAGS) --o=$@ $<
-
-
-.PRECIOUS: %.hpp
-%$(EXE) : %.hpp $(CMDSTAN_MAIN) $(LIBSUNDIALS) $(MPI_TARGETS)
-	@echo ''
-	@echo '--- Linking C++ model ---'
-	$(LINK.cpp) $(CXXFLAGS_PROGRAM) -include $< $(CMDSTAN_MAIN) $(LDLIBS) $(LIBSUNDIALS) $(MPI_TARGETS) $(OUTPUT_OPTION)
+@echo '--- Translating Stan model to c++ code ---'
+$(WINE) bin/stanc$(EXE) $(STANCFLAGS) --o=$@ $<
 ```
-
-where `$(LINK.cpp)` is defined to be:    
-
+The CmdStan makefile rule for creating the executable from the
+compiled c++ model is in file `github/stan-dev/cmdstan/make/program`, line 37:
+```
+$(LINK.cpp) $(CXXFLAGS_PROGRAM) -include $< $(CMDSTAN_MAIN) $(LDLIBS) $(LIBSUNDIALS) $(MPI_TARGETS) $(OUTPUT_OPTION)
+```
+where the `$(LINK.cpp)` is a rule which contains more make variables:
 ```
 $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) $(TARGET_ARCH)
 ```
 
+The `compile_file` function should provide hooks to override
+the makefile variables used in these rules in the form of
+optional arguments where the argument name matches the makefile variable name
+and its value is a string, by default empty string.
+_Will this work?_
 
-### sample using HMC/NUTS
+### sample (using HMC/NUTS)
 
 Produce sample output using HMC/NUTS with diagonal metric: `stan::services::sample::hmc_nuts_diag_e_adapt`
 
@@ -218,11 +240,15 @@ to file with read permissions in Rdump or JSON format which specifies precompute
 
 Extract a simple list of structured draws for the specified estimand, which is either
 a parameter where non-local variable declared in the transformed parameter or generated quantities block.
-It will collapse the draws from multiple chains and then imposes the structure for that parameter (or variable).
-For non-scalar parameters, e.g. a matrix, this requires assembling the contained elements into the correct structure.
-We could have this work for a single parameter (e.g., sigma[2,3]) or a simple
-list of parameters, and it'd be a lot faster.
+This function should accept a list of parameter names or the name of an individual parameter.
+It should collapse the draws from multiple chains.
 
 ```
 draws = extract(posterior_sample = None, parameter = None)
 ```
+
+Ideally, the extract function should impose the structure of the parameter on the returned elements.
+For non-scalar parameters, e.g. a matrix, this requires assembling the contained elements into the correct structure.
+This requires information about the type and dimensions of the container which could be parsed out
+of the set of parameter names returned by the sampler.
+A simpler alternative is to return the flattened set of elements as is.
