@@ -132,7 +132,7 @@ Produce sample output using HMC/NUTS with diagonal metric: `stan::services::samp
 ```
 posterior_sample = sample(model = None,
                           num_chains = 4,
-                          parallel = True
+                          num_cores = 1,
                           seed = None,
                           data_file = "",
                           init_param_values = "",
@@ -155,6 +155,8 @@ posterior_sample = sample(model = None,
 ```
 
 The `sample` command can run chains in parallel or sequentially.
+The `num_cores` argument specifies the maximum number of processes which
+can be run in parallel.
 When all chains have completed without error, the output files need to be
 combined into a single output.
 

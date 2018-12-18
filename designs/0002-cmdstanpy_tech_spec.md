@@ -49,6 +49,8 @@ The data object provides methods to:
 + transform a Python `dict` object into a new file on disk in JSON format
 + get the data file name
 
+Python's `json` module will be used to serialize python dictionaries to JSON strings.
+
 _todo_:  Check that numpy arrays (stored row-major) are also serialized to JSON in row-major form.
 
 
@@ -112,7 +114,7 @@ Produce sample output using HMC/NUTS with diagonal metric: `stan::services::samp
 ```
 posterior_sample = sample(model = None,
                           num_chains = 4,
-                          parallel = True
+                          num_cores = 1,
                           seed = None,
                           data_file = "",
                           init_param_values = "",
@@ -134,9 +136,16 @@ posterior_sample = sample(model = None,
                           HMC_stepsize_jitter = 0)
 ```
 
-The `sample` command can run chains in parallel or sequentially.
+The `sample` command can run chains in parallel and/or sequentially.
+The `num_cores` argument specifies the maximum number of processes which
+can be run in parallel.
 When all chains have completed without error, the output files need to be
 combined into a single output.
+
+Python's multiprocessing module will be used to run all chains.
+
++ [python 3](https://docs.python.org/3/library/multiprocessing.html)
++ [python 2](https://docs.python.org/2.7/library/multiprocessing.html)
 
 ### extract
 
