@@ -53,20 +53,10 @@ is used to sample from the posterior distribution of the model conditioned on th
 
 By `data` we mean just the data used to condition the model.
 For a model which contains a non-empty `data` block,
-the data is the corresponding set of python objects of the
-correct type and shape and which meet all constraints specified in the variable declaration.
-
-Data inputs can be either:
-
-- a file on disk in JSON format which contains a single JSON object
-- a file on disk in Rdump format
-
+CmdStan reads the data from a file on disk in either JSON or Rdump format.
 In order to fit a Stan model to data in the Python environment, this data must be
 assembled into a Python `dict` with entries for all data variables specified by the model
-and then serialized to a file in JSON format; alternatively, we can write a helper function
-that takes a list of variable names and does this automatically.
-
-_todo_:  Check that numpy arrays (stored row-major) are also serialized to JSON in row-major form.
+and then serialized to a file in JSON format.
 
 ### posterior_sample
 
@@ -114,12 +104,13 @@ The Pandas module will be used to manage this information.
 ### compile_file
 
 Compile Stan model, returning immutable instance of a compiled model.
-For the initial version, use CmdStan's `makefile` for program `Gnu make`.
-The makefile has rules which compile and link an executable program `my_model`
-from Stan program file `my_model.stan` in two steps:
+This is done in two steps:
 
 * call the `stanc` compiler which translates the Stan program to c++
 * call c++ to compile and link the generated c++ code
+
+The `compile_file` function must allow the user to specify
+default settings to the c++ compiler and ways to override those setting.
 
 ```
 model = compile_file(path = None,
@@ -131,32 +122,8 @@ model = compile_file(path = None,
 
 * `path` =  - string, must be valid pathname to Stan program file
 * `opt_level` = optimization level, the value of the `-o` flag for the c++ compiler
+* additional flags for the c++ compiler
 
-##### makefile variables
-
-The files `github/stan-dev/cmdstan/makefile` and `github/stan-dev/cmdstan/make/program`
-contain the rules used to compile and link the program.
-The CmdStan makefile rule for compiling the Stan program to c++ is
-in file `github/stan-dev/cmdstan/make/program`, line 30:
-```
-@echo '--- Translating Stan model to c++ code ---'
-$(WINE) bin/stanc$(EXE) $(STANCFLAGS) --o=$@ $<
-```
-The CmdStan makefile rule for creating the executable from the
-compiled c++ model is in file `github/stan-dev/cmdstan/make/program`, line 37:
-```
-$(LINK.cpp) $(CXXFLAGS_PROGRAM) -include $< $(CMDSTAN_MAIN) $(LDLIBS) $(LIBSUNDIALS) $(MPI_TARGETS) $(OUTPUT_OPTION)
-```
-where the `$(LINK.cpp)` is a rule which contains more make variables:
-```
-$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) $(TARGET_ARCH)
-```
-
-The `compile_file` function should provide hooks to override
-the makefile variables used in these rules in the form of
-optional arguments where the argument name matches the makefile variable name
-and its value is a string, by default empty string.
-_Will this work?_
 
 ### sample (using HMC/NUTS)
 
