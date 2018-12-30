@@ -87,6 +87,9 @@ versions of Infinity, -Infinity, and NaN are also allowed.
 
 Nice function to have:  validate data against model's data block definitions.
 
+Another nice function:  allow user to specify location of serialized JSON file
+for reuse.
+
 ### sampler_runset
 
 Each call to cmdstan to runs the HMC-NUTS sampler for a specified number of iterations.
