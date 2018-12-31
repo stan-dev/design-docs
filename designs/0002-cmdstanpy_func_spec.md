@@ -85,14 +85,13 @@ infinity, the strings "-Inf" and "-Infinity" are mapped to negative
 infinity, and the string "NaN" is mapped to not-a-number. Bare
 versions of Infinity, -Infinity, and NaN are also allowed.
 
-Nice function to have:  validate data against model's data block definitions.
+Functions for future versions:
 
-Another nice function:  allow user to specify location of serialized JSON file
-for reuse.
++ validate data against model's data block definitions
 
 ### sampler_runset
 
-Each call to cmdstan to runs the HMC-NUTS sampler for a specified number of iterations.
+Each call to CmdStan to runs the HMC-NUTS sampler for a specified number of iterations.
 In order to check that the model is well-specified and the sampler has
 converged during warmup we run the sampler multiple times, each time using
 the same random seed for the random number generator and a different offset.
@@ -100,7 +99,7 @@ Each run is one _chain_ and the set of draws for that chain is one _sample_.
 
 The `sampler_runset` object records all information about the set of runs:
 
-- cmdstan arguments
+- CmdStan arguments
 - number of chains
 - per-chain output file name
 
@@ -152,7 +151,7 @@ this information is organized for optimal memory locality:
 - each row contains all values for one vector label
 - column indices are <chain, iteration>.
 
-This requires transposing the information in the cmdstan csv output files where
+This requires transposing the information in the CmdStan csv output files where
 each file corresponds to the chain, each row of output corresponds to the iteration,
 and each column corresponds to a particular label.
 
@@ -176,6 +175,10 @@ model = compile_file(path = None,
                      ...)
 ```
 
+In case of compilation failure, this function reutrns `None`
+and the `compile_file` function reports the compiler error messages.
+
+
 #### parameters
 
 * `path` =  - string, must be valid pathname to Stan program file
@@ -187,6 +190,7 @@ model = compile_file(path = None,
 
 Condition the model on the data using HMC/NUTS with diagonal metric: `stan::services::sample::hmc_nuts_diag_e_adapt`
 to produce a posterior sample.
+
 
 ```
 sample_runset = sample(model = None,
@@ -219,6 +223,10 @@ can be run in parallel.
 When all chains have completed, the output files are combined into a 
 single `posterior_sample` object.
 
+If any of the runs fail for any reason, this function returns `None`
+and reports all error messages.
+
+
 #### CmdStanPy specific parameters
 
 * `model` - CmdStanPy model object
@@ -227,9 +235,9 @@ single `posterior_sample` object.
 
 #### CmdStan parameters
 
-The named arguments must be translated into a valid call to the cmdstan sampler.
+The named arguments must be translated into a valid call to the CmdStan sampler.
 This requires assembling the arguments into a specific order and adding additional
-cmdstan arguments.
+CmdStan arguments.
 
 * Random seed - CmdStan arg must be preceded by `random`
     + `seed` - random seed
@@ -267,11 +275,11 @@ to file with read permissions in Rdump or JSON format which specifies precompute
   + `HMC_stepsize` - positive double value, step size for discrete evolution, double > 0, default 1
   + `HMC_stepsize_jitter` Uniformly random jitter of the stepsize, values between 0,1, default 0
 
-_note: cmdstan uses uppercase `NUTS` and `HMC` in argument names, but lowercase `algorithm=hmc engine=nuts`_
+_note: CmdStan uses uppercase `NUTS` and `HMC` in argument names, but lowercase `algorithm=hmc engine=nuts`_
 
 ### summary
 
-Calls cmdstan's `summary` executable passing in the names of the per-chain output files
+Calls CmdStan's `summary` executable passing in the names of the per-chain output files
 stored in the `sampler_runset` object.
 Prints output to console or file
 
@@ -282,7 +290,7 @@ summary(runset = `sampler_runset`, output_file= "filename")
 
 ### diagnose
 
-Calls cmdstan's `diagnose` executable passing in the names of the per-chain output files
+Calls CmdStan's `diagnose` executable passing in the names of the per-chain output files
 stored in the `sampler_runset` object.
 If there are no diagnostic messages, prints message that no problems were found.
 
