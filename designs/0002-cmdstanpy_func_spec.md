@@ -19,7 +19,7 @@ model conditioned on data.
 for CmdStanPy sampler function.
 
 - Easy to install,
-  + minimal Python library dependencies: numpy, pandas
+  + minimal Python library dependencies: numpy
   + Python code doesn't interface directly with c++, only calls compiled executables (using package `os`).
 
 - Modular - CmdStanPy produces a sample from the posterior but other modules will do the analysis.
@@ -108,9 +108,10 @@ The `sampler_runset` object records all information about the set of runs:
 
 The `posterior_sample` object combines all outputs from a `sampler_runset`
 into a single object.
-The Pandas module is used to manage this information in a memory-efficient fashion.
+The numpy module is used to manage this information in a memory-efficient fashion.
 
-The `posterior_sample` object contains _draws_ from the model conditioned on data.
+The `posterior_sample` object 
+Stan's HMC NUTS sampler produces a set of _draws_ from the model conditioned on data.
 A draw is a vector of values and a set of labels for each index consisting of:
 
 - the sampler state for that iteration
@@ -125,6 +126,8 @@ A draw is a vector of values and a set of labels for each index consisting of:
 transformed parameters, and generated quantities blocks.
   + values for scalar variables are labeled by the variable name, e.g. `theta`
   + values for container variables are a labeled by variable name plus index, e.g. `theta[2,1,2]`
+
+For each iteration, the sampler pro
 
 A posterior sample is only valid if the model is well-specified and
 Stan's HMC sampler has converged during warmup.
@@ -143,7 +146,7 @@ per-chain draws, sampler settings, and warning messages:
 - `get_stan_version`
 
 
-A  `posterior_sample` object contains all draws from all chains as a pandas dataframe.
+A  `posterior_sample` object contains all draws from all chains as a numpy ndarray.
 For a valid sample, all draws across all chains are used to estimate the posterior density.
 This analysis will be done by downstream modules, therefore
 this information is organized for optimal memory locality:
@@ -193,7 +196,7 @@ to produce a posterior sample.
 
 
 ```
-sample_runset = sample(model = None,
+sampler_runset = sample(model = None,
                        num_chains = 4,
                        num_cores = 1,
                        seed = None,
