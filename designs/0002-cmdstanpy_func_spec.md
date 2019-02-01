@@ -48,20 +48,23 @@ with the following classes and functions.
 
 ## Classes
 
-### model
+### Model
 
 A model is a specification of a joint probability density in the form of a Stan program.
 Models are translated to c++ by the `stanc` compiler (CmdStan `bin/stanc`).
 This c++ code is compiled and linked to the Stan math library and the resulting executable
 is used to sample from the posterior distribution of the model conditioned on the data.
 
-A instance of a model is created by calling the `compile_file` function.
+A instance of a Model is created by calling the `compile_file` function.
 
 
-### data
+### StanData
 
-By `data` we mean the data used to condition the model, i.e., the values
+A `StanData` object contains
+the data used to condition the model, i.e., the values
 for all variables declared in the `data` block of the Stan program.
+The same data format is used for user-supplied initializations
+for the HMC/NUTS sampler.
 
 Stan's data types are limited to primitives `int` and `real`,
 container types `vector`, `row_vector`, and `matrix` which contain real values,
@@ -70,15 +73,19 @@ Stan's `int` type corresponds to Python's `int` type,
 and Stan's `real` type corresponds to Python's `float` type.
 Containers and arrays correspond to numpy's `ndarray`.
 
-For CmdStan, data is read in from a file on disk in either JSON or Rdump format.
-The `data` class provides methods to assemble all of the data variable values
-and serialize them to a file in the JSON format accepted by Stan's 
-JSON data handler which checks that the input consists of a single
-JSON object which contains a set of name-value pairs.
+The `StanData` class provides methods to assemble all of the data variable values
+and serialize them to a file in a format accepted by CmdStan
 
-The key is a string corresponding to the data variable name and
-the value is either a single numeric scalar value or a JSON array of
-numeric values.  Arrays must be rectangular.
+ - `rdump` (CmdStan 2.18) 
+ -  JSON (CmdStan 2.19).
+
+CmdStan 2.18 input data must be in Rdump format.
+As of the next release (2.19),  CmdStan also accepts JSON format.
+
+JSON input must be a single JSON object which contains a set of name-value pairs
+where the name corresponds to the Stan data variable name
+and the value is either a single numeric value or an array of numeric values.
+Arrays must be rectangular.
 Empty arrays are not allowed, nor are arrays of empty arrays.
 The strings "Inf" and "Infinity" are mapped to positive
 infinity, the strings "-Inf" and "-Infinity" are mapped to negative
@@ -89,7 +96,8 @@ Functions for future versions:
 
 + validate data against model's data block definitions
 
-### sampler_runset
+
+### RunSet
 
 Each call to CmdStan to runs the HMC-NUTS sampler for a specified number of iterations.
 In order to check that the model is well-specified and the sampler has
@@ -97,20 +105,20 @@ converged during warmup we run the sampler multiple times, each time using
 the same random seed for the random number generator and a different offset.
 Each run is one _chain_ and the set of draws for that chain is one _sample_.
 
-The `sampler_runset` object records all information about the set of runs:
+The `RunSet` object records all information about the set of runs:
 
 - CmdStan arguments
 - number of chains
 - per-chain output file name
 
 
-### posterior_sample
+### PosteriorSample
 
-The `posterior_sample` object combines all outputs from a `sampler_runset`
+The `PosteriorSample` object combines all outputs from a `RunSet`
 into a single object.
 The numpy module is used to manage this information in a memory-efficient fashion.
 
-The `posterior_sample` object 
+The `PosteriorSample` object 
 Stan's HMC NUTS sampler produces a set of _draws_ from the model conditioned on data.
 A draw is a vector of values and a set of labels for each index consisting of:
 
@@ -134,7 +142,7 @@ Stan's HMC sampler has converged during warmup.
 The samples from all chains in a set of runs must be the same size and shape.
 If they aren't, the model has failed to converge during warmup and the sample is invalid.
 
-The `posterior_sample` provides methods which report
+The `PosteriorSample` provides methods which report
 per-chain draws, sampler settings, and warning messages:
 
 - `get_num_chains`
@@ -146,7 +154,7 @@ per-chain draws, sampler settings, and warning messages:
 - `get_stan_version`
 
 
-A  `posterior_sample` object contains all draws from all chains as a numpy ndarray.
+A  `PosteriorSample` object contains all draws from all chains as a numpy ndarray.
 For a valid sample, all draws across all chains are used to estimate the posterior density.
 This analysis will be done by downstream modules, therefore
 this information is organized for optimal memory locality:
@@ -178,7 +186,7 @@ model = compile_file(path = None,
                      ...)
 ```
 
-In case of compilation failure, this function reutrns `None`
+In case of compilation failure, this function returns `None`
 and the `compile_file` function reports the compiler error messages.
 
 
@@ -196,35 +204,33 @@ to produce a posterior sample.
 
 
 ```
-sampler_runset = sample(model = None,
-                       num_chains = 4,
-                       num_cores = 1,
-                       seed = None,
-                       data_file = "",
-                       init_param_values = "",
-                       output_file = "",
-                       diagnostic_file = "",
-                       refresh = 100,
-                       num_samples = 1000,
-                       num_warmup = 1000,
-                       save_warmup = False,
-                       thin_samples = 1,
-                       adapt_engaged = True,
-                       adapt_gamma = 0.05,
-                       adapt_delta = 0.65,
-                       adapt_kappa = 0.75,
-                       adapt_t0 = 10,
-                       nuts_max_depth = 10,
-                       hmc_diag_metric = "",
-                       hmc_stepsize = 1,
-                       hmc_stepsize_jitter = 0)
+RunSet = sample(model = None,
+                num_chains = 4,
+                num_cores = 1,
+                seed = None,
+                data_file = "",
+                init_param_values = "",
+                output_file = "",
+                diagnostic_file = "",
+                refresh = 100,
+                num_samples = 1000,
+                num_warmup = 1000,
+                save_warmup = False,
+                thin_samples = 1,
+                adapt_engaged = True,
+                adapt_gamma = 0.05,
+                adapt_delta = 0.65,
+                adapt_kappa = 0.75,
+                adapt_t0 = 10,
+                nuts_max_depth = 10,
+                hmc_diag_metric = "",
+                hmc_stepsize = 1,
+                hmc_stepsize_jitter = 0)
 ```
 
 The `sample` command can run chains in parallel or sequentially.
 The `num_cores` argument specifies the maximum number of processes which
 can be run in parallel.
-When all chains have completed, the output files are combined into a 
-single `posterior_sample` object.
 
 If any of the runs fail for any reason, this function returns `None`
 and reports all error messages.
@@ -283,7 +289,7 @@ _note: CmdStan uses uppercase `NUTS` and `HMC` in argument names, but lowercase 
 ### summary
 
 Calls CmdStan's `summary` executable passing in the names of the per-chain output files
-stored in the `sampler_runset` object.
+stored in the `RunSet` object.
 Prints output to console or file
 
 ```
@@ -294,7 +300,7 @@ summary(runset = `sampler_runset`, output_file= "filename")
 ### diagnose
 
 Calls CmdStan's `diagnose` executable passing in the names of the per-chain output files
-stored in the `sampler_runset` object.
+stored in the `RunSet` object.
 If there are no diagnostic messages, prints message that no problems were found.
 
 Prints output to console or file
