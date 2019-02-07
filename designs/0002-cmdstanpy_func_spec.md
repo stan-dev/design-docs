@@ -41,10 +41,140 @@ for CmdStanPy sampler function.
 
 - Other packages will be used to analyze the posterior sample.
 
+## Workflow
+
+* Specify Stan model - function `compile_model`
+
+* Assemble input data
+  + as Python `dict`, use `StanData` object methods to serialize to file for CmdStan
+  + using existing data file - use directly
+
+* Run sampler - function `sample` produces `RunSet` object
+
+* Check posterior - functions `stansummary`, `diagnose`
+
+* Create `PosteriorSample` object for downstream analysis.
+
+
 ## CmdStanPy API
 
 The CmdStanPy interface is implemented as a Python package
-with the following classes and functions.
+with the following functions and classes.
+
+## Functions
+
+### compile_file
+
+Compile Stan model, returning immutable instance of a compiled model.
+This is done in two steps:
+
+* call the `stanc` compiler which translates the Stan program to c++
+* call c++ to compile and link the generated c++ code
+
+The `compile_file` function must allow the user to specify
+default settings to the c++ compiler and ways to override those setting.
+
+```
+model = compile_file(path = None,
+                     optimization_flag = 3,
+                     ...)
+```
+
+In case of compilation failure, this function returns `None`
+and the `compile_file` function reports the compiler error messages.
+
+
+#### parameters
+
+* `path` =  - string, must be valid pathname to Stan program file
+* `optimization_flag` = optimization level, the value of the `-o` flag for the c++ compiler, default value is `3`
+* additional flags for the c++ compiler
+
+
+### sample (using HMC/NUTS)
+
+Condition the model on the data using HMC/NUTS with diagonal metric: `stan::services::sample::hmc_nuts_diag_e_adapt`
+and run one or more chains, producing a set of samples from the posterior.
+Returns a `RunSet` object which contains information on all runs for all chains.
+
+```
+RunSet = sample(model,
+                chains = 4,
+                cores = 1,
+                seed = None,
+                data_file = None,
+                init_param_values = None,
+                csv_output_file = None,
+                console_output_file = None,
+                refresh = None,
+                post_warmup_draws_per_chain = None,
+                warmup_draws_per_chain = None,
+                save_warmup = False,
+                thin = None,
+                do_adaptation = True,
+                adapt_gamma = None,
+                adapt_delta = None,
+                adapt_kappa = None,
+                adapt_t0 = None,
+                nuts_max_depth = None,
+                hmc_metric_file = None,
+                hmc_stepsize = None)
+```
+The `model` and `output_file` parameter are required, all other parameters are optional.
+
+The `sample` command runs one or more sampler chains (argument `num_chains`), in parallel or sequentially.
+The `num_cores` argument specifies the maximum number of processes which can be run in parallel.
+
+#### parameters
+
+* `model` - required - CmdStanPy model object
+* `num_chains` - positive integer, default 4
+* `num_cores` -  positive integer, default 1
+* `seed` - integer - random seed
+* `data_file` - string - full pathname of input data file in JSON or Rdump format
+* `init_param_values` - string - full pathname of file of initial values for some or all parameters in JSON or Rdump format
+* `csv_output_file` - string - full pathname of the sampler output file, in stan-csv format, , each chain's output is written to its own file '<csv-output>-<chain_id>.csv'
+* `console_output_file` - string - full pathname of file of sampler messages to stdout and/or stderr, each chain's output is written to its own file '<console-output>-<chain_id>.txt'
+* `refresh` - integer - the number of iterations between progress message updates.  When `refresh = -1`, the progress message is suppressed but not warning messages.
+* `post_warmup_draws_per_chain` non-negative integer - number of post-warmup draws for each chain
+* `warmup_draws_per_chain`  non-negative integer - number of warmup draws for each chain
+* `save_warmup` - boolean, default False - whether or not warmup draws are written to output file
+* `thin` - non-negative integer - period between saved draws
+* `nuts_max_treedepth` - integer - NUTS maximum tree depth
+* `do_adaptation` - boolean, default True - whether or not NUTS algorithm updates sampler stepsize and metric during warmup, True implies num warmup draws > 0
+* `adapt_gamma` - non-negative double - adaptation regularization scale,
+* `adapt_delta` - non-negative double - adaptation target acceptance statistic
+* `adapt_kappa` - non-negative double - adaptation relaxation exponent
+* `adapt_t0` non-negative integer - adaptation iteration offset
+* `hmc_metric_file` - string - full pathname of file containing precomputed diagonal Euclidian metric in JSON or Rdump format
+* `hmc_stepsize` - positive double value -  step size for discrete evolution
+
+These arguments must be translated into a valid call to the CmdStan sampler.
+This requires assembling the arguments into a specific order and adding additional
+CmdStan arguments.
+
+### summary
+
+Calls CmdStan's `summary` executable passing in the names of the per-chain output files
+stored in the `RunSet` object.
+Prints output to console or file
+
+```
+summary(runset = `sampler_runset`, output_file= "filename")
+```
+
+### diagnose
+
+Calls CmdStan's `diagnose` executable passing in the names of the per-chain output files
+stored in the `RunSet` object.
+If there are no diagnostic messages, prints message that no problems were found.
+
+Prints output to console or file
+
+```
+diagnose(runset = `sampler_runset`, output_file= "filename")
+```
+
 
 ## Classes
 
@@ -107,15 +237,16 @@ Each run is one _chain_ and the set of draws for that chain is one _sample_.
 
 The `RunSet` object records all information about the set of runs:
 
-- CmdStan arguments
 - number of chains
+- per-chain call to CmdStan
 - per-chain output file name
+- per-chain transcript of output to stdout and stderr
+- per-chain return code
 
 
 ### PosteriorSample
 
-The `PosteriorSample` object combines all outputs from a `RunSet`
-into a single object.
+The `PosteriorSample` object combines all outputs from a `RunSet` into a single object.
 The numpy module is used to manage this information in a memory-efficient fashion.
 
 The `PosteriorSample` object 
@@ -165,147 +296,4 @@ this information is organized for optimal memory locality:
 This requires transposing the information in the CmdStan csv output files where
 each file corresponds to the chain, each row of output corresponds to the iteration,
 and each column corresponds to a particular label.
-
-
-## Functions
-
-### compile_file
-
-Compile Stan model, returning immutable instance of a compiled model.
-This is done in two steps:
-
-* call the `stanc` compiler which translates the Stan program to c++
-* call c++ to compile and link the generated c++ code
-
-The `compile_file` function must allow the user to specify
-default settings to the c++ compiler and ways to override those setting.
-
-```
-model = compile_file(path = None,
-                     opt_level = 3,
-                     ...)
-```
-
-In case of compilation failure, this function returns `None`
-and the `compile_file` function reports the compiler error messages.
-
-
-#### parameters
-
-* `path` =  - string, must be valid pathname to Stan program file
-* `opt_level` = optimization level, the value of the `-o` flag for the c++ compiler, default value is `3`
-* additional flags for the c++ compiler
-
-
-### sample (using HMC/NUTS)
-
-Condition the model on the data using HMC/NUTS with diagonal metric: `stan::services::sample::hmc_nuts_diag_e_adapt`
-to produce a posterior sample.
-
-
-```
-RunSet = sample(model = None,
-                num_chains = 4,
-                num_cores = 1,
-                seed = None,
-                data_file = "",
-                init_param_values = "",
-                output_file = "",
-                diagnostic_file = "",
-                refresh = 100,
-                num_samples = 1000,
-                num_warmup = 1000,
-                save_warmup = False,
-                thin_samples = 1,
-                adapt_engaged = True,
-                adapt_gamma = 0.05,
-                adapt_delta = 0.65,
-                adapt_kappa = 0.75,
-                adapt_t0 = 10,
-                nuts_max_depth = 10,
-                hmc_diag_metric = "",
-                hmc_stepsize = 1,
-                hmc_stepsize_jitter = 0)
-```
-
-The `sample` command can run chains in parallel or sequentially.
-The `num_cores` argument specifies the maximum number of processes which
-can be run in parallel.
-
-If any of the runs fail for any reason, this function returns `None`
-and reports all error messages.
-
-
-#### CmdStanPy specific parameters
-
-* `model` - CmdStanPy model object
-* `num_chains` - positive integer
-* `num_cores` -  positive integer
-
-#### CmdStan parameters
-
-The named arguments must be translated into a valid call to the CmdStan sampler.
-This requires assembling the arguments into a specific order and adding additional
-CmdStan arguments.
-
-* Random seed - CmdStan arg must be preceded by `random`
-    + `seed` - random seed
-
-* Data Inputs - CmdStan args preceded by `data`
-    + `data_file` - string, 
-    + `init_param_values` - string, default is empty string, must be valid pathname
-to file with read permissions in Rdump or JSON format which specifies initial values for some or all parameters.
-
-* Outputs
-    + `output_file` - string value, default is empty string, must be valid pathname
-    + `diagnostic_file` - string value, default is empty string, must be valid pathname
-    + `refresh` - integer, the number of iterations between progress message updates.
-When `refresh = -1`, the progress message is suppressed but not warning messages.
-
-* MCMC Sampling - CmdStan args must be preceded by `sample`
-    + `num_samples` Number of sampling iterations - non-negative integer, default 1000
-    + `num_warmup`  Number of warmup iterations - non-negative integer, default 1000
-    + `save_warmup` Stream warmup samples to output? - True (1) False (0), default False
-    + `thin_samples` Period between saved samples - non-negative integer, default 1
-
-*  Warmup Adaptation controls: CmdStan args must be preceded by `adapt`
-    + `adapt_engaged` True (1) False (0), default True
-    + `adapt_gamma` Adaptation regularization scale, double > 0, default 0.05
-    + `adapt_delta` Adaptation target acceptance statistic, double > 0, default 0.65
-    + `adapt_kappa` Adaptation relaxation exponent, double > 0, default 0.75
-    + `adapt_t0` Adaptation iteration offset, double > 0, default 10
-
-* HMC Sampler:  CmdStan arg must be preceded by `algorithm=hmc engine=nuts`
-  + `NUTS_max_depth` -  Maximum tree depth, int > 0, default 10
-
-* HMC Metric:  must be preceded by keywords `metric=diag`
-  + `HMC_diag_metric` - string value, default is empty string, must be valid pathname
-to file with read permissions in Rdump or JSON format which specifies precomputed Euclidian metric.
-  + `HMC_stepsize` - positive double value, step size for discrete evolution, double > 0, default 1
-  + `HMC_stepsize_jitter` Uniformly random jitter of the stepsize, values between 0,1, default 0
-
-_note: CmdStan uses uppercase `NUTS` and `HMC` in argument names, but lowercase `algorithm=hmc engine=nuts`_
-
-### summary
-
-Calls CmdStan's `summary` executable passing in the names of the per-chain output files
-stored in the `RunSet` object.
-Prints output to console or file
-
-```
-summary(runset = `sampler_runset`, output_file= "filename")
-```
-
-
-### diagnose
-
-Calls CmdStan's `diagnose` executable passing in the names of the per-chain output files
-stored in the `RunSet` object.
-If there are no diagnostic messages, prints message that no problems were found.
-
-Prints output to console or file
-
-```
-diagnose(runset = `sampler_runset`, output_file= "filename")
-```
 
