@@ -9,7 +9,7 @@ Most changes can be implemented and reviewed via the [normal pull request workfl
 
 ## What is a design?
 
-A major change to Stan will include at least two designs. The first is a functional specification that defines user-facing changes; an example here might be new proposed syntax for the Stan language, or an alternative architecture around how the interfaces communicate with a Stan model. The functional specification should be specific enough that a user/client would understand the impact of the change and start out summarizing the proposed change at a very high level in a sentence or two, identifying all of the clients, laying out an ontology of objects the change traffics in from the perspective of these clients, and then highlighting any additional concerns. 
+A major change to Stan will include at least two designs. The first is a functional specification that defines user-facing changes; an example here might be new proposed syntax for the Stan language, or an alternative architecture around how the interfaces communicate with a Stan model. The functional specification should be specific enough that a user/client would understand the impact of the change and start out summarizing the proposed change at a very high level in a sentence or two, identifying all of the clients, laying out an ontology of objects the change traffics in from the perspective of these clients, and then highlighting any additional concerns.
 
 Once a functional spec has been agreed upon, we next need a design codified as a technical specification that defines how the functional spec will be implemented. The technical specification needs to be specific enough that it can be approved as a plan for implementation. These documents should not include every last detail of an implementation---for example, rarely will code other than function or class signatures be appropriate in either a functional or technical specification. They should include text to support the design and component interaction diagrams such as UML where appropriate.
 
@@ -27,13 +27,13 @@ Design review ensures that the high level technical choices are simple, communic
 
 Designs and issues vary in a multitude of details concerning how they are staged.  A successful life cycle for a major issue might include:
 
-a brainstorming session on Discourse where the underlying problem is raised and broad, preliminary ideas are proposed and discussed,
-one or more developers turning these ideas into a design proposal, typically on a shared Wiki page,
-one proposal by the relevant managing stakeholder,
-the accepted design and accompanying discussion being summarized and specified at greater detail a GitHub issue, which may host its own lower-level discussion of technical issues,
-the design being implemented on a branch from the development branch of the relevant repositories with sufficient unit test coverage and documentation to release the feature,
-a pull request being made for the issue and goes through normal code review on GitHub, returning to the previous step until it is approved through code review
-the issue being merged into the development branches of the relevant repositories, which will include the feature in the next release.
+* a brainstorming session on Discourse where the underlying problem is raised and broad, preliminary ideas are proposed and discussed,
+* one or more developers turning these ideas into a design proposal, typically on a shared Wiki page,
+* one proposal by the relevant managing stakeholder,
+* the accepted design and accompanying discussion being summarized and specified at greater detail a GitHub issue, which may host its own lower-level discussion of technical issues,
+* the design being implemented on a branch from the development branch of the relevant repositories with sufficient unit test coverage and documentation to release the feature,
+* a pull request being made for the issue and goes through normal code review on GitHub, returning to the previous step until it is approved through code review
+* the issue being merged into the development branches of the relevant repositories, which will include the feature in the next release.
 
 Once a design is accepted, it should not be substantially changed. Minor changes may be submitted as amendments.  This is one reason why it may not be productive to go into fine-grained implementation details in the technical specification.  An approved design does not assign anyone in particular to work on the design, but one should create an issue linking or incorporating the design document.
 
@@ -57,8 +57,7 @@ It is generally a good idea to pursue feedback from other project developers bef
 
 ## The process
 
-Create a Google document (TODO: Github design review repo and template)
-Write a design document! It’s best to follow something like the [Rust RFC template](https://github.com/rust-lang/rfcs/blob/master/0000-template.md). Designs that do not present convincing motivation, demonstrate understanding of the impact of the design, or are disingenuous about the drawbacks or alternatives tend to be poorly received.
+Write a design document roughly following [the template](0000-template.md). Designs that do not present convincing motivation, demonstrate understanding of the impact of the design, or are disingenuous about the drawbacks or alternatives tend to be poorly received.
 Share it with the Stan core developers, advertising it on discourse and ideally the weekly meeting. Especially share it with one or more developers with design approval privileges.
 Designs rarely go through this process unchanged, especially as alternatives and drawbacks are illuminated. Edit the existing Google doc and allow it to preserve the history.
 Submit the design to a reviewer and work with them until it is accepted or postponed.
