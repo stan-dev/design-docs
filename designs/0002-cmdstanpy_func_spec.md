@@ -8,21 +8,33 @@ output:
 
 CmdStanPy is a lightweight interface to Stan for Python users which
 provides the necessary objects and functions to compile a Stan program
-and run Stan's HMC-NUTS sampler to produce a sample from the posterior of the
-model conditioned on data.
+and run either:
+ - the HMC-NUTS sampler to produce a sample from the posterior of the model conditioned on data
+ - the LBFGS optimizer
+ - VI
+
+The CmdStan interface is file-based:
+
+* Stan programs are compiled to c++ executibles
+* The c++ executible operates on input files and produces output files.
+
+Using CmdStanPy, in-memory Python objects can be used as data inputs,
+and the sampler output can be assembled into an in-memory data structure which
+can be used in downstream analysis.
+
 
 ## Goals
 
 - Clean interface to Stan services so that CmdStanPy can keep up with Stan releases.
 
-- Provides complete control - all sampler arguments have corresponding named argument
-for CmdStanPy sampler function.
+- Provides complete control - all CmdStan command options have corresponding named argument in CmdStanPy.
 
 - Easy to install,
   + minimal Python library dependencies: numpy
   + Python code doesn't interface directly with c++, only calls compiled executables (using package `os`).
 
 - Modular - CmdStanPy produces a sample from the posterior but other modules will do the analysis.
+
 
 ## Design considerations
 
@@ -31,6 +43,14 @@ for CmdStanPy sampler function.
 - Data structure used for posterior sample facilitates downstream analysis.
   + is memory efficient - avoids making copies of big data.
   + provides fast access for per-parameter, per-chain information.
+
+- Should this be Python2/Python3 agnostic?  After investigation, answer is no, use Python3
+  + all existing downstream modules are written for Python3 
+  + Python3 code is cleaner
+
+- how to specify configuration choices:
+  + path to CmdStan installation
+  + path to tmpfiles vs. in-memory tmpfiles
 
 
 ## Assumptions
@@ -41,19 +61,33 @@ for CmdStanPy sampler function.
 
 - Other packages will be used to analyze the posterior sample.
 
+
 ## Workflow
 
+In order to demonstrate that the model is well-specified and can fit the data,
+it is necessary to run more than one chain.
+This results in a set of samples,  i.e., a `RunSet` object.
+
 * Specify Stan model - function `compile_model`
+  + takes as input a Stan program and produces the corresponding c++ executable.
+  + both Stan program and c++ executable exist as on-disk files
 
-* Assemble input data
-  + as Python `dict`, use `StanData` object methods to serialize to file for CmdStan
-  + using existing data file - use directly
+* Assemble input data in the form of either:
+  + a Python `dict` object consisting of key-value pairs where the key corresponds
+ to Stan data variables and the value is of the correct type and shape.
+  + an existing data file on disk in either JSON or Rdump format.
 
-* Run sampler - function `sample` produces `RunSet` object
+* Run sampler
+  + initial implementation for Stan's NUTS-HMC sampler
+  + lightweight object `RunSet` keeps track of sampler arguments and per-chain outcome
 
-* Check posterior - functions `stansummary`, `diagnose`
+* Run CmdStan tools `stansummary` and `diagnose`
+  + `Summary` contains output of CmdStan `cmdstan/bin/summary`  - assemble csv output into in-memory object?
+  + `Diagnostics` contains output of CmdStan `cmdstan/bin/diagnose` - unstructured text report
 
-* Create `PosteriorSample` object for downstream analysis.
+* Assemble in-memory object containing all draws for all chains for downstream analysis
+  - `PosteriorSample` object - numpy ndarray consisting of chains X draws X parameters (column major)
+  - `SamplerState` object - numpy ndarray consisting of chains X draws X sampler state (lp__, stepsize, etc)
 
 
 ## CmdStanPy API
@@ -120,12 +154,12 @@ RunSet = sample(model,
                 hmc_metric_file = None,
                 hmc_stepsize = None)
 ```
-The `model` and `output_file` parameter are required, all other parameters are optional.
 
 The `sample` command runs one or more sampler chains (argument `num_chains`), in parallel or sequentially.
 The `num_cores` argument specifies the maximum number of processes which can be run in parallel.
 
 #### parameters
+The `model` parameter is required.  If the model has data inputs, the input data parameter must be specified as well.
 
 * `model` - required - CmdStanPy model object
 * `num_chains` - positive integer, default 4
@@ -227,23 +261,6 @@ Functions for future versions:
 + validate data against model's data block definitions
 
 
-### RunSet
-
-Each call to CmdStan to runs the HMC-NUTS sampler for a specified number of iterations.
-In order to check that the model is well-specified and the sampler has
-converged during warmup we run the sampler multiple times, each time using
-the same random seed for the random number generator and a different offset.
-Each run is one _chain_ and the set of draws for that chain is one _sample_.
-
-The `RunSet` object records all information about the set of runs:
-
-- number of chains
-- per-chain call to CmdStan
-- per-chain output file name
-- per-chain transcript of output to stdout and stderr
-- per-chain return code
-
-
 ### PosteriorSample
 
 The `PosteriorSample` object combines all outputs from a `RunSet` into a single object.
@@ -266,18 +283,22 @@ transformed parameters, and generated quantities blocks.
   + values for scalar variables are labeled by the variable name, e.g. `theta`
   + values for container variables are a labeled by variable name plus index, e.g. `theta[2,1,2]`
 
-For each iteration, the sampler pro
-
 A posterior sample is only valid if the model is well-specified and
 Stan's HMC sampler has converged during warmup.
 The samples from all chains in a set of runs must be the same size and shape.
 If they aren't, the model has failed to converge during warmup and the sample is invalid.
 
-The `PosteriorSample` provides methods which report
+The `PosteriorSample` provides methods to access the sample draws:
+
+- `get_parameter`
+- `get_sampler_state`
+- `get_draw`
+
+It also provides methods which report
 per-chain draws, sampler settings, and warning messages:
 
 - `get_num_chains`
-- `get_draws`
+- `get_num_draws`
 - `get_warnings`
 - `get_step_size`
 - `get_metric`
@@ -285,15 +306,19 @@ per-chain draws, sampler settings, and warning messages:
 - `get_stan_version`
 
 
-A  `PosteriorSample` object contains all draws from all chains as a numpy ndarray.
-For a valid sample, all draws across all chains are used to estimate the posterior density.
-This analysis will be done by downstream modules, therefore
-this information is organized for optimal memory locality:
 
-- each row contains all values for one vector label
-- column indices are <chain, iteration>.
+### RunSet
 
-This requires transposing the information in the CmdStan csv output files where
-each file corresponds to the chain, each row of output corresponds to the iteration,
-and each column corresponds to a particular label.
+Each call to CmdStan to runs the HMC-NUTS sampler for a specified number of iterations.
+In order to check that the model is well-specified and the sampler has
+converged during warmup we run the sampler multiple times, each time using
+the same random seed for the random number generator and a different offset.
+Each run is one _chain_ and the set of draws for that chain is one _sample_.
 
+The `RunSet` object records all information about the set of runs:
+
+- number of chains
+- per-chain call to CmdStan
+- per-chain output file name
+- per-chain transcript of output to stdout and stderr
+- per-chain return code
