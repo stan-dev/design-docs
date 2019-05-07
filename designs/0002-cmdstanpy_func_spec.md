@@ -64,10 +64,6 @@ can be used in downstream analysis.
 
 ## Workflow
 
-In order to demonstrate that the model is well-specified and can fit the data,
-it is necessary to run more than one chain.
-This results in a set of samples,  i.e., a `RunSet` object.
-
 * Specify Stan model - function `compile_model`
   + takes as input a Stan program and produces the corresponding c++ executable.
   + both Stan program and c++ executable exist as on-disk files
@@ -77,17 +73,15 @@ This results in a set of samples,  i.e., a `RunSet` object.
  to Stan data variables and the value is of the correct type and shape.
   + an existing data file on disk in either JSON or Rdump format.
 
-* Run sampler
-  + initial implementation for Stan's NUTS-HMC sampler
-  + lightweight object `RunSet` keeps track of sampler arguments and per-chain outcome
+* Run sampler - function `sample`
+  + invokes Stan's NUTS-HMC sampler to condition model on input data, produces output csv files
+  + runs any number of chains - should run at least 2, default 4
+  + lightweight object `RunSet` keeps track of sampler arguments, per-chain outcome, output files
+  + returns `PosteriorSample` object which contains information about sample
 
-* Run CmdStan tools `stansummary` and `diagnose`
-  + `Summary` contains output of CmdStan `cmdstan/bin/summary`  - assemble csv output into in-memory object?
-  + `Diagnostics` contains output of CmdStan `cmdstan/bin/diagnose` - unstructured text report
-
-* Assemble in-memory object containing all draws for all chains for downstream analysis
-  - `PosteriorSample` object - numpy ndarray consisting of chains X draws X parameters (column major)
-  - `SamplerState` object - numpy ndarray consisting of chains X draws X sampler state (lp__, stepsize, etc)
+* `PosteriorSample` object contains names of csv output files
+  + attribute `sample` assembles in-memory sample from csv files
+  + methods `summary` and `diagnose` invoke CmdStan tools `bin/stansummary` and `bin/diagnose` respectively
 
 
 ## CmdStanPy API
@@ -129,7 +123,7 @@ and the `compile_file` function reports the compiler error messages.
 
 Condition the model on the data using HMC/NUTS with diagonal metric: `stan::services::sample::hmc_nuts_diag_e_adapt`
 and run one or more chains, producing a set of samples from the posterior.
-Returns a `RunSet` object which contains information on all runs for all chains.
+Returns a `PosteriorSample` object which contains information on all runs for all chains.
 
 ```
 RunSet = sample(model,
