@@ -13,19 +13,27 @@ Phoronix is an open-source tool for conducting software-based performance testin
 
 Benchmarking is crucial to the deployment of performant software. Properly testing algorithms and their implementations is non-trivial. Collecting results aids developer productivity and ultimately helps improve the optimization of the code base for all users. Enabling distributed testing ensures that the largest number of contributors can conveniently and accurately report how well their systems perform when executing reference code.
 
+The Phoronix test suite as it exists currently is not a result of individual effort it has been developed collaboratively with the input of users from a variety of scopes and use cases. In practice this has resulted in a simple and effective tool that scales from timing code execution to actively controlling applications and taking detalied measurements of the specifications and system involved. 
+
 How replicable are code-based performance improvements (or regressions) across a variety of hardware configurations? What code quality issues may be observed on certain computer configurations which may go undetected on other systems? Which unintuitive scenarios can we test for which information may not be avaiable through other sources?
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-Users on Linux, Windows, Apple OS X, GNU Hurd, Solaris, or BSD Operating Systems download and install the Phoronix Test Suite and use several (two) console commands to install and benchmark their systems. These commands are generally `phoronix-test-suite install [*]` and `phoronix-test-suite benchmark [*]` with `[*]` denoting an arbitrary test-suite specification. Under certain workflows an internet connected test-suite user only needs to be able to install phoronix and obtain the Openbenchmarking ID of the test-suite being considered. 
+Users on Linux, Windows, or Apple OS X download and install the Phoronix Test Suite and use several (two) console commands to install and benchmark their systems. These commands are generally `phoronix-test-suite install [*]` and `phoronix-test-suite benchmark [*]` with `[*]` denoting an arbitrary test-suite specification. Under certain workflows an internet connected test-suite user only needs to be able to install phoronix and obtain the Openbenchmarking ID of the test-suite being considered. 
 
-For test suite developers the process involves writing the test, specifying the system requirements for building it, and uploading to a team maintained Openbenchmarking repository. ALthough benchmarking in principally a hardware focused activity these test cases should be thought of as part of the debugging process for performance orientated end-user code. The results produced from benchmarking can be related to all manner of physical specifics about the state of the computer as it runs various tasks specified by the developer. These specifics include: compiler used, GPUs, Operating Systems, CPUs, disk drives, etc. Captured results from these subsytems are stored online and can be visually depicted using standardized, intuitive layouts. 
+For test suite developers the process involves writing the test, specifying the system requirements for building it, and uploading to a team maintained Openbenchmarking repository. Although benchmarking is principally a hardware focused activity these test cases should be thought of as part of the debugging process for performance orientated end-user code. The results produced from benchmarking can be related to all manner of physical specifics about the state of the computer as it runs various tasks specified by the developer. These specifics include: compiler used, GPUs, Operating Systems, CPUs, disk drives, etc. Captured results from these subsytems are stored online and can be visually depicted using standardized, intuitive layouts. 
+
+It is difficult to imagine all of the different ways the Phoronix test suite and Stan could possibly integrate. Candidate scenarios include: running example models in CmdStan particularly on test cases for a developement branch of math for a new function where decision making may require additional cost/benefit information or prior to a versioned release as part of the debugging process. In this case the unreleased branch would be specified in the build file and the test suite user would have the repository downloaded and compiled locally within ~/.phoronix-test-suite (on Linux). Testing becomes a background activity. 
+
+The benefits of doing this seem to be highest for larger code bases. It might be impractical to have even just the math library cloned simply to profile a single test case. It should be possible to instruct the benchmark to use an existing install though it's easy to imagine that there would be conflicts due to code versioning. A standard implementation will always default to installing and compiling code from source or unpacking included code bundles which are downloaded from Openbenchmarking.org.
+
+A quick example test was written by a student with no background in benchmarking or the Phoronix test suite in approximately 30 minutes: https://github.com/ode33/standev-phoronix/tree/master/test-profiles/local/build-standev-cmdstan-2.19. This test-profile takes about 10 minutes to compile and 16 seconds to execute on a mid-range system. There is a lot more that can be done with batch testing, targeting measures other than execution time, and the aggregation and presentation of results. 
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-From the Phoronix Test Suite Guide:
+From the Phoronix Test Suite Guide: https://www.phoronix-test-suite.com/documentation/phoronix-test-suite.pdf (pp 59-62):
 
 "Writing a test profile for the Phoronix Test Suite is a relatively quick and easy process for anyone familiar with common Linux commands and the basics of XML. To help you understand the design of the Phoronix Test Suite, this guide covers the steps needed to write a testing profile for a very simple application.
 
@@ -69,14 +77,18 @@ Reliance on benchmarking and performance hardware reports may distract from othe
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-The Git repository `seantalts/perf-math` and other scripts have been posted to various pull requests and issues on `stan-dev/math`. In most cases these are related to micro-benchmarks (relatively small code snippets). In other cases these tests may not be conveniently replicable or the reporting may lack comprehensive details which would be valuable for drawing qualitative comparisons. 
+The Git repository `seantalts/perf-math` and other scripts have been posted to various pull requests and issues on `stan-dev/math`. In most cases these are related to micro-benchmarks (relatively small code snippets). In other cases these tests may not be conveniently replicable or the reporting may lack comprehensive details which would be valuable for drawing qualitative (build-level) comparisons. 
 
-In order to build on the capacity of the stan-dev team to draw conclusions regarding performance improvements and make better informed decisions for future code revisions a more convenient and extensible system could be introduced. 
+In order to add to the capacity of the stan-dev team to draw conclusions regarding performance improvements and make better informed decisions for future code revisions a more convenient and extensible system could be introduced. 
+
+Some alternatives can be found here: https://alternativeto.net/software/phoronix-test-suite/. From the users perspective these comparable systems appear as high-level interfaces or comprehensive (install and execute) applications. For the test-suite developer it's hard to comment generally on how the experience might differ. Collaborative systems of which Phoronix is the leader seem preferable since they generally are developed with low-level customization at their core. On the other hand proprietary services are often optimized for convenience so there may be alternitives which provide otherwise unobtainable productivity enhancements.
+
+Microbenchmarking programs such as the toolkit provided by Google seem preferable for routine developer testing scenarios. This is a scenario where only a handful of test results based on relative performance on one or two systems are needed to make a decision and comparisons across different system build and hardware specification is not so important.
 
 # Prior art
 [prior-art]: #prior-art
 
-The `phoronix-test-suite` package is licensed under the "GNU General Public License v3.0" only which is SPDX terms is both FSF Free/Libre and OSI Approved for use in other collaborative software or documentation. 
+The `phoronix-test-suite` package is licensed under the "GNU General Public License v3.0" only which in SPDX terms is both FSF Free/Libre and OSI Approved for use in other collaborative software or documentation. 
 
 Currently Openbenchmarking.org boasts hosting over 27,900,000 unique benchmark comparions and views.
 
