@@ -91,7 +91,7 @@ with the following functions and classes.
 
 ## Functions
 
-### compile_file
+### compile_model
 
 Compile Stan model, returning immutable instance of a compiled model.
 This is done in two steps:
