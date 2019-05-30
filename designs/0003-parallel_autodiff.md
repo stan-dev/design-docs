@@ -8,7 +8,7 @@
 
 The goal of this RFC is to expand the CPU based parallelism
 capabilities of Stan math. This RFC proposes to introduce a new
-parallel for with automatic sharding and a parallel reduce which
+parallel map with automatic sharding and a parallel reduce which
 combines automatic sharding with vectorization.
 
 
@@ -16,7 +16,7 @@ combines automatic sharding with vectorization.
 # Motivation
 [motivation]: #motivation
 
-Currently `map_rect` allows for parallelism, but it brings a few
+Currently `map_rect` allows map parallelism, but it brings a few
 restrictions:
 
 1. Very user unfriendly due to the requirement to pack and unpack data
@@ -54,8 +54,7 @@ Use cases where this RFC will add value by speeding up execution are:
 - Parallel accumulation of independent log-likelihood terms with very
   good scalability. The good scalability is achieved by combining
   automatic sharding with vectorization.
-- Parallel evaluation of for loops where each loop iteration is
-  independent.
+- Parallel evaluation of map where each iteration is independent.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -123,7 +122,7 @@ struct fun1 {
   }
 };
 
-TEST(Base, parallel_for) {
+TEST(Base, parallel_map) {
   const int num_jobs = 1000;
   // Here we use simple integer indices for the iterators
   typedef boost::counting_iterator<int> count_iter;
@@ -263,8 +262,9 @@ The overall strategy to implement all of this is based on
   evaluation can be written to different ad tapes which are combined
   together. This is essentially a type of nested autodiff (but it’s
   more general and different).
-- Expose the parallel_for of the TBB with using closures. This is
-  essentially a `map_rect` with automatic sharding.
+- Expose the parallel_for (as a map type function) of the TBB with
+  using closures. This is essentially a `map_rect` with automatic
+  sharding.
 - Expose parallel_reduce of the TBB with using closures. This will
   bring automatic sharding and combine this with vectorization.
 
@@ -274,7 +274,7 @@ lambda functors.
 
 Reverse mode autodiff needs some refactoring to work with the task
 based approach of the TBB. However, we don’t need to deal with TBB
-tasks ourselves atm, since we can just use parallel for and parallel
+tasks ourselves atm, since we can just use parallel map and parallel
 reduce. These TBB algorithms chunk the work to be done into
 inter-dependent tasks (these algorithms are examples of so-called data
 parallel programming in TBB jargon). How these are executed is nothing
@@ -355,7 +355,7 @@ The `ScopedChainableStack` has these public member functions:
 
 With such a `ScopedChainableStack` object we can then easily interface
 with the TBB. The idea is to have one instance of `ScopedChainableStack`
-per thread which gets used during the parallel for (or reduce) of the
+per thread which gets used during the parallel map (or reduce) of the
 TBB. The TBB provides such a lazy thread local storage (see [tbb
 doc](https://software.intel.com/en-us/node/506244)). Whenever the TBB
 dispatches some work to a task we can then simply use the thread local
