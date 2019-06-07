@@ -615,17 +615,21 @@ Why should we *not* do this?
   in local contexts. This fits nicely into the TBB, but the introduced
   abstraction is useful regardless of the TBB.
 - What other designs have been considered and what is the rationale
-  for not choosing them? OpenMP is a compiler extension which allows
-  to introduce parallelism. However, the compiler extension is not
-  supported by the native macOS compiler and we do not get sufficient
-  control over the execution flow. It is furthermore very much limited
-  to parallelizing loops whereas the TBB gives us a lot more building
-  blocks needed to, for example, one also get exactly reproducible
-  parallel programs. Moreover, we can use the flow graph facility of
-  the TBB to eventually parallelize HMC itself. Another contender is
-  parallel C++17, but this will take forever until supported by
-  compilers and we still would get less control and fewer parallel
-  building blocks as compared to what is in the TBB.
+  for not choosing them? 
+  
+  ### OpenMP
+  OpenMP is a compiler extension which allows to introduce parallelism and its use is portable across Win/Linux/OsX. It requires specific compiler support (a compiler that understands OpenMP pragmas). Recent C++ compilers tend to have this support but it is not supported by the native macOS compiler. OpenMP excels in parallezing straightforward bounded loops on built-in types and large predictable data parallel problems. If the iteration space is custom or the reduction operation is more complex OpenMP is less or even not suitable. OpenMP provides very limited options for controlling the execution flow. 
+  
+  A comprehensive comparison of the capabilites of Intel TBB vs OpenMP is given [here](https://software.intel.com/en-us/intel-threading-building-blocks-openmp-or-native-threads) with a disclaimer that this comparison was made by an employee of Intel. Tousimojarad et. al [link](https://www.semanticscholar.org/paper/Comparison-of-Three-Popular-Parallel-Programming-on-Tousimojarad-Vanderbauwhede/deff757dcef1fb827b58351d393d1efe22e4bdf8) provide a performance study of TBB vs OpenMP on Xeon Phi. Intel also provides a performance comparison when TBB and OpenMP is used with Intel MKL (https://software.intel.com/en-us/articles/using-intel-mkl-and-intel-tbb-in-the-same-application). This is significant due to Eigen's use of Intel MKL. The use of TBB does not exclude OpenMP as the two coexist in the same application.
+
+  ### C++17 parallelism
+  
+  C++17 parallelism does not have compiler support yet and it will probably still take some time. Clang and gcc implementation will use TBB as their foundation. Compared to TBB, C++17 provide much less advanced features. TBB and C++17 can coexist in theory but such codebase would be confusing.
+
+  ### SYCL
+
+  SYCL is an open standard that provides a programming model to facilitate parallel heterogeneous architectures (CPUs, GPU and other accelerators) in C++. It aims to provide similar features to TBB with the addition of supporting GPUs and other accelerators but it is still in very early stages and has limited support with compilers.
+
 - What is the impact of not doing this? Stan will be slow for medium
   to large problems. Most importantly, Stan cannot be scaled to larger
   problems which cannot be put on the gpu. Also, Users won’t get to
