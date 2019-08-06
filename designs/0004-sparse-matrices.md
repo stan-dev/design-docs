@@ -11,7 +11,7 @@ Add a sparse matrix type to the Stan language and sparse matrix operations to St
 # Motivation
 [motivation]: #motivation
 
-Data for models such as [ICAR](https://mc-stan.org/users/documentation/case-studies/icar_stan.html) come in as sparse matrix. (i.e. a large number of elements in the matrix are zero). There are often methods for storing and computing these matrices which utilize the sparsity structure to give better performance. Currently we have some Compressed Sparse Row (CSR) [methods](https://mc-stan.org/docs/2_19/functions-reference/sparse-matrices.html) for going from dense matrices to simpler representations that ignore zeros and vice versa. Though the only exposed operation is [`csr_matrix_times_vector`](https://mc-stan.org/docs/2_19/functions-reference/sparse-matrix-arithmetic.html). The CSR methods currently supported are limited and require a good deal of fan-dangling from the user.
+Data for models such as [ICAR](https://mc-stan.org/users/documentation/case-studies/icar_stan.html) come in as sparse matrix. (i.e. a large number of elements in the matrix are zero). There are often methods for storing and computing these matrices which utilize the sparsity structure to give better performance and use less memory. Currently we have some Compressed Sparse Row (CSR) [methods](https://mc-stan.org/docs/2_19/functions-reference/sparse-matrices.html) for going from dense matrices to simpler representations that ignore zeros and vice versa. Though the only exposed operation is [`csr_matrix_times_vector`](https://mc-stan.org/docs/2_19/functions-reference/sparse-matrix-arithmetic.html). The CSR methods currently supported are limited and require a good deal of fan-dangling from the user.
 
 A `sparse_matrix` type directly in the stan language would support all existing methods available for `matrix` types. From Dan and Aki's previous [proposal](https://aws1.discourse-cdn.com/standard14/uploads/mc_stan/original/2X/1/13fda4102c8f48e5aadbf0fbe75d3641a187d0a3.pdf) this would include full auto-diff and algebra support for:
 
@@ -41,7 +41,7 @@ Most of the below comes from the [functional-spec](https://github.com/stan-dev/s
 
 ## Data
 
-Sparse matrix types in the Stan language can be constructed in the data block via Coordinate List Notation using the rows, cols, non-empty row/col indices, and values for those index positions.
+Sparse matrix types in the Stan language can be constructed in the data block via Coordinate List Notation using the row and column sizes, non-empty row/column indices, and values for those index positions.
 
 ```stan
 int N; // Rows
@@ -54,11 +54,9 @@ vector[N] vals; // Values in each position
 sparse_matrix[N, M, nonzero_row_index, nonzero_col_index, val] A
 // Can we do this?
 sparse_matrix[N, M, nonzero_row_index, nonzero_col_index] B;
-
-
 ```
 
-Alternatively a sparse matrix can be constructed via Compressed Sparse Row (CSR) Notation That's used within Eigen (See appendix below for description on how Eigen handles sparse matrix storage)
+Alternatively, a sparse matrix can be constructed via Compressed Sparse Row (CSR) Notation that's used within Eigen (See appendix below for description on how Eigen handles sparse matrix storage)
 
 ```stan
 data {
@@ -74,13 +72,24 @@ data {
 }
 ```
 
-Sparse vectors are the same only with a single size an a single index array.
+Sparse vectors are the same only with a single size on a single index array.
+
+```stan
+int N; // Rows
+int K; // number non-empty
+int nonzero_row_index[K]; // Non-empty row positions
+vector[N] vals; // Values in each position
+// Direct way
+sparse_matrix[N, nonzero_row_index, val] A
+// Can we do this?
+sparse_vector[N, nonzero_row_index] B;
+```
 
 To users, sparse matrices for data should operate the same way as normal matrices.
 
 ## Transformed Data
 
-Sparse matrices in these blocks can be defined dynamically and declared such as
+Sparse matrices in this blocks can be defined dynamically and declared such as
 
 ```stan
 transformed data {
@@ -120,12 +129,11 @@ transformed parameters {
 
 ```
 
-The size and non-zero indices for sparse matrices in the must be defined in the data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same full specification in each iteration of the model.
+The size and non-zero indices for sparse matrices in the paramter blocks must be defined in the data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same full specification in each iteration of the model.
 
 ## Full Example Model
 
-In my dream mindscape, here is how a user could write a gaussian process that uses sparse matrices.
-
+Below is a full example model that uses sparse vectors and matrices for data and parameters
 ```stan
 data {
   int<lower=1> N; // Vec size
@@ -161,8 +169,8 @@ model {
 }
 ```
 
-[1] Because Stan is told what values are true zeros vs. sparse zeros we can set this up fine.
-[2] The `sparse_cholesky_matrix` holdds the ordering of the sparse matrix after decomposition.
+- [1] Because Stan is told what values are true zeros vs. sparse zeros we can set this up fine.
+- [2] The `sparse_cholesky_matrix` holds the ordering of the sparse matrix after decomposition.
 
 
 # Reference-level explanation
@@ -176,7 +184,7 @@ There are two approaches to coding with Eigen's sparse matrices in Stan-math.
 
 Sparse matrices can be supported in Stan-math by either moving to `EigenBase` as the default in the metaprogramming or by having separate methods for Sparse Matrices.
 
-Let's look at primitive add for an example. One implementation of `add` in stan math is
+Let's look at primitive add for an example. One implementation of `add` in Stan math is
 
 ```cpp
 template <typename T1, typename T2, int R, int C>
@@ -198,20 +206,22 @@ inline return_derived_obj<Derived1, Derived2> add(
 }
 ```
 
-Where `return_derived_obj` would deduce the correct the correct return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix tempalte specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
+Where `return_derived_obj` would deduce the correct the correct return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
 
 ### The Simple Way
 
 If we would rather not refactor the math library we can keep our current templates and have specializations for Sparse matrices.
 
 ```cpp
-template <typename T1, typename T2, int R, int C>
-inline Eigen::SparseMatrix<return_type_t<T1, T2>, R, C> add(
-    const Eigen::SparseMatrix<T1, R, C>& m1, const Eigen::SparseMatrix<T2, R, C>& m2) {
+template <typename T1, typename T2>
+inline Eigen::SparseMatrixBase<return_type_t<T1, T2>> add(
+    const Eigen::SparseMatrixBase<T1>& m1, const Eigen::SparseMatrixBase<T2>& m2) {
   check_matching_dims("add", "m1", m1, "m2", m2);
   return m1 + m2;
 }
 ```
+
+## TODO: talk about specialized rev stuff.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -276,8 +286,11 @@ From the Eigen [Sparse Matrix Docs](https://eigen.tuxfamily.org/dox/group__Tutor
 Sparse matrices in Eigen are stored using four compact arrays.
 
 > Values: stores the coefficient values of the non-zeros.
+
 > InnerIndices: stores the row (resp. column) indices of the non-zeros.
+
 > OuterStarts: stores for each column (resp. row) the index of the first non-zero in the previous two arrays.
+
 > InnerNNZs: stores the number of non-zeros of each column (resp. row). The word inner refers to an inner vector that is a column for a column-major matrix, or a row for a row-major matrix. The word outer refers to the other direction.
 
 | row/col | 0  | 1 | 2  | 3 | 4  |
