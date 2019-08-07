@@ -39,11 +39,17 @@ A `sparse_matrix` type directly in the stan language would support all existing 
 
 Most of the below comes from the [functional-spec](https://github.com/stan-dev/stan/wiki/Functional-Spec:-Sparse-Matrix-Data-Types) for sparse matrices.
 
+A sparse matrix/vector differs from a standard matrix/vector only in the underlying representation of the data.
+
+Below we go over how sparse matrices can be constructed and operated on within each stan block.
+
+
 ## Data
 
 Sparse matrix types in the Stan language can be constructed in the data block via Coordinate List Notation using the row and column sizes, non-empty row/column indices, and values for those index positions.
 
 ```stan
+data {
 int N; // Rows
 int M; // Cols
 int K; // number non-empty
@@ -54,21 +60,6 @@ vector[N] vals; // Values in each position
 sparse_matrix[N, M, nonzero_row_index, nonzero_col_index, val] A
 // Can we do this?
 sparse_matrix[N, M, nonzero_row_index, nonzero_col_index] B;
-```
-
-Alternatively, a sparse matrix can be constructed via Compressed Sparse Row (CSR) Notation that's used within Eigen (See appendix below for description on how Eigen handles sparse matrix storage)
-
-```stan
-data {
-  int N; // rows
-  int M; // cols
-  int K; // Number of non-empty values
-  int starting_row_idx[K]; // Gives index for first non-zero in each row
-  int column_idx[K]; // Column index for each value
-  vector[N] vals; // Values in each position
-  sparse_matrix<M, N, starting_row_idx, column_idx, vals> A;
-  // Again if we can be clever on input
-  sparse_matrix<M, N, starting_row_idx, column_idx, vals> B;
 }
 ```
 
@@ -85,11 +76,31 @@ sparse_matrix[N, nonzero_row_index, val] A
 sparse_vector[N, nonzero_row_index] B;
 ```
 
-To users, sparse matrices for data should operate the same way as normal matrices.
+The above sparse matrix example with values
+
+```stan
+N = 5
+M = 5
+K = 7
+// Column major order
+nonzero_row_index[K] = [2, 3, 1, 3, 5, 3, 2, 5]
+nonzero_col_index[K] = [1, 1, 2, 2, 3, 4, 5, 5]
+val[K] = [22, 7, 3, 5, 14, 1, 17, 8]
+```
+
+Would have the dense form of
+
+| row/col | 1  | 2 | 3  | 4 | 5  |
+|---------|----|---|----|---|----|
+| 1       | 0  | 3 | 0  | 0 | 0  |
+| 2       | 22 | 0 | 0  | 0 | 17 |
+| 3       | 7  | 5 | 0  | 1 | 0  |
+| 4       | 0  | 0 | 0  | 0 | 0  |
+| 5       | 0  | 0 | 14 | 0 | 8  |
 
 ## Transformed Data
 
-Sparse matrices in this blocks can be defined dynamically and declared such as
+Sparse matrices in this block can be defined dynamically and declared such as
 
 ```stan
 transformed data {
@@ -103,9 +114,12 @@ C[10, 10] = 100.0;
 }
 ```
 
+The assignment operation `C[10, 10] = 100.0;` works fine with Eigen as the implementation leaves room in the arrays for quick insertions.
+
 ## Parameters, Transformed Parameters, and Generated Quantities
 
 Parameters be defined as above for data or deduced from the output of other functions.
+
 ```stan
 data {
   int<lower=1> N; // Rows
@@ -121,25 +135,28 @@ parameters {
   real<lower=0> rho;
   real<lower=0> alpha;
   real<lower=0> sigma;
-  sparse_matrix[N, M, nz_foo_row_index, nz_foo_row_index] foo;
+  // Defining sparse matrices in parameters needs the non-zero elements
+  sparse_matrix[N, M, nz_foo_row_index, nz_foo_col_index] foo;
 }
 transformed parameters {
+  // Non-zero elements are deduced by the operation on x
   sparse_matrix[N, N] K = cov_exp_quad(x, alpha, rho);
 }
 
 ```
 
-The size and non-zero indices for sparse matrices in the paramter blocks must be defined in the data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same full specification in each iteration of the model.
+The size and non-zero indices for sparse matrices in the parameter block must be from either the data block or transformed data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same full specification in each iteration of the model.
 
 ## Full Example Model
 
-Below is a full example model that uses sparse vectors and matrices for data and parameters
+Below is a full example model that uses sparse vectors and matrices for data and parameters for a gaussian process.
+
 ```stan
 data {
   int<lower=1> N; // Vec size
   int<lower=1, upper=N> K; // # of nonzero elements
   int<lower=1> non_zero_index[K]; // Indices for nonzero elements
-  sparse_vector[N, non_zero_index] x; // [1]
+  sparse_vector[N, non_zero_index] x;
   vector[N] y;
 }
 transformed data {
@@ -170,17 +187,36 @@ model {
 ```
 
 - [1] Because Stan is told what values are true zeros vs. sparse zeros we can set this up fine.
-- [2] The `sparse_cholesky_matrix` holds the ordering of the sparse matrix after decomposition.
+
+- [2] The `sparse_cholesky_matrix` is optional and holds the permutation of the sparse matrix after decomposition using the `EIGEN_SPARSEMATRIX_BASE_PLUGIN`. Permuting the rows of the sparse matrix before decomposition can often increase performance. Instead of having to recompute the permutation on each call to `cholesky_decompose`, after the first iteration we can keep the [`PermutationMatrix`](https://eigen.tuxfamily.org/dox/classEigen_1_1SimplicialCholeskyBase.html#aff1480e595a21726beaec9a586a94d5a) inside of the `sparse_cholesky_matrix` and reuse it on subsequent operations.
 
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
+## I/O
+
+Data input formats should not need to change, less R and Python want a particular method that does not exist at this time.
+
+At the C++ level input data can be constructed to the sparse matrix through soemthing like what Ben did [here](https://github.com/stan-dev/rstanarm/blob/master/inst/include/csr_matrix_times_vector2.hpp#L18) for a revised `csr_matrix_times_vector`.
+
+```cpp
+int outerIndexPtr[cols+1];
+int innerIndices[nnz];
+double values[nnz];
+// read-write (parameters)
+Map<SparseMatrix<double>> sm1(rows, cols, nnz, outerIndexPtr, innerIndices, values);
+// read only (data)
+Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndexPtr, innerIndices, values);   
+```
+
 ## Stan Math
 
-There are two approaches to coding with Eigen's sparse matrices in Stan-math.
+### Templating
 
-### The Hard way
+There are two approaches to have Stan support Eigen's Sparse Matrix format.
+
+#### The Hard way
 
 Sparse matrices can be supported in Stan-math by either moving to `EigenBase` as the default in the metaprogramming or by having separate methods for Sparse Matrices.
 
@@ -199,14 +235,14 @@ Would change to
 
 ```cpp
 template <typename Derived1, typename Derived2>
-inline return_derived_obj<Derived1, Derived2> add(
+inline Eigen::PlainObjectBase<return_derived_obj<Derived1, Derived2>> add(
     const Eigen::EigenBase<Derived1>& m1, const Eigen::EigenBase<Derived2>& m2) {
   check_matching_dims("add", "m1", m1, "m2", m2);
   return m1 + m2;
 }
 ```
 
-Where `return_derived_obj` would deduce the correct the correct return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
+Where `return_derived_obj` would deduce the correct derived return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
 
 ### The Simple Way
 
@@ -221,7 +257,9 @@ inline Eigen::SparseMatrixBase<return_type_t<T1, T2>> add(
 }
 ```
 
-## TODO: talk about specialized rev stuff.
+### Keeping Permutation Matrix from Cholesky
+
+`SimplicalCholeskybase` keeps the permutation matrix, when the user uses a `sparse_cholesky_matrix` we can pull out this permutation matrix and keep it to use in the next iteration. We do this through `EIGEN_SPARSEMATRIX_BASE_PLUGIN`, adding the permutation matrix to the input matrix. This adds a bito of state, but assuming the sparse matrices are fixed in size and sparsity this should be fine.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -233,7 +271,7 @@ Doing this improperly could lead to serious amounts of "code smell" aka duplicat
 
 - Why is this design the best in the space of possible designs?
 
-This is the most full-feature design I can think of that makes sparse matrices simple for stan users.
+This is the most full-feature design I can think of that makes sparse matrices simple for stan users while giving the stan-math library a lot of flexibility.
 
 - What other designs have been considered and what is the rationale for not choosing them?
 
@@ -248,6 +286,8 @@ model {
   ...
 ```
 
+Or alternativly we can extend the `csr_*` functions, though this requires a lot of recomputation.
+
 - What is the impact of not doing this?
 
 Kind of a bummer, it will be awkward for users to fit models whose data or parameters are sparsely defined.
@@ -255,28 +295,49 @@ Kind of a bummer, it will be awkward for users to fit models whose data or param
 # Prior art
 [prior-art]: #prior-art
 
-Discuss prior art, both the good and the bad, in relation to this proposal.
-A few examples of what this can include are:
+There has been a _lot_ of previous discussion about sparse matrices in Stan which are listed below in no particular order.
 
-- Talk about tensorflow and mxnet.
+- [Sparse Matrix Roadmap](https://discourse.mc-stan.org/t/sparse-matrix-roadmap/5493/24)
+- [Sparse Matrix Functionality without the Sparse Matrix](https://discourse.mc-stan.org/t/sparse-model-matrix-functionality-without-the-sparse-matrix/5759)
+- [Spline Fitting Demo in Comparison of Sparse Vs. Non-Sparse](https://discourse.mc-stan.org/t/spline-fitting-demo-inc-comparison-of-sparse-vs-non-sparse/3287)
+- [Should Sparse Matrices in Stan be Row Major or Column Major](https://discourse.mc-stan.org/t/should-sparse-matrices-in-stan-be-row-major-or-column-major/1563)
+- [A Proposal for Sparse Matrices and GPs in Stan](https://discourse.mc-stan.org/t/a-proposal-for-sparse-matrices-and-gps-in-stan/2183)
+- [Sparse Matrix Use Cases (Resolving Declaration Issues)](https://discourse.mc-stan.org/t/a-proposal-for-sparse-matrices-and-gps-in-stan/2183)
+- [Sparse Matrices in Eigen with Autodiff](https://discourse.mc-stan.org/t/sparse-matrices-in-eigen-with-autodiff/3324/6)
+- [Sparse Matrix Functional Spec](https://discourse.mc-stan.org/t/sparse-matrix-functional-spec/109)
+- [Sparse Matrices in Stan](https://discourse.mc-stan.org/t/sparse-matrices-in-stan/3129)
 
-- For language, library, tools, and compiler proposals: Does this feature exist in other programming languages and what experience have their community had?
-- For community proposals: Is this done by some other community and what were their experiences with it?
-- For other teams: What lessons can we learn from what other communities have done here?
-- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
+### Tensorflow
 
-This section is intended to encourage you as an author to think about the lessons from other languages, provide readers of your RFC with a fuller picture.
-If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or if it is an adaptation from other languages.
+Tensorflow uses the same data storage schema inside of [`tf.sparse.SparseTensor`](https://www.tensorflow.org/versions/r2.0/api_docs/python/tf/sparse/SparseTensor) with a limited amount of specific [methods](https://www.tensorflow.org/api_docs/python/tf/sparse). It does not seem that they have [Sparse Cholesky support](https://github.com/tensorflow/tensorflow/issues/15910).
 
-Note that while precedent set by other languages is some motivation, it does not on its own motivate an RFC.
-Please also take into consideration that rust sometimes intentionally diverges from common language features.
+It seems like OpenAI has methods like matrix multiplication for block sparse matrices (Sparse matrices with dense sub-blocks) in tensorflow available on [github](https://github.com/openai/blocksparse).
+
+### Keras
+
+Both Keras and Tensorflow Sparse support is very [low level](https://stackoverflow.com/a/43188970). Though it seems like work is going on for RaggedTensors and SparseTensors in [Keras](https://github.com/tensorflow/tensorflow/issues/27170#issuecomment-509296615).
+
+### MxNet
+
+MxNets [`portri`](https://mxnet.incubator.apache.org/api/python/symbol/linalg.html#mxnet.symbol.linalg.potrf) (Cholesky) function can handle sparse arrays, but there is not a lot of documentation saying that explicitly. Besides that they also store things in the compressed storage schema.
+
+### PyTorch
+
+Pytorch has an experimental section for limited sparse tensor operations in [`torch.sparse`](https://pytorch.org/docs/stable/sparse.html).
+
+
+It looks like sparse matrices has been difficult for a lot of groups!
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
 - What parts of the design do you expect to resolve through the RFC process before this gets merged?
-- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
-- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
+
+- Language Design
+- How this will work with the new Stan compiler?
+  - Can we deduce the sparse matrix non-zero indices for some functions like I have in the above?
+- Will the cost of the refactor of Stan math to EigenBase worth it?.
+- Any prior art that I've missed?
 
 
 # Appendix: (Eigen Sparse Matrix formats)
