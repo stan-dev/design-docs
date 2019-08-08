@@ -212,41 +212,7 @@ Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndexPtr, innerIndices
 
 ## Stan Math
 
-### Templating
-
-There are two approaches to have Stan support Eigen's Sparse Matrix format.
-
-#### The Hard way
-
-Sparse matrices can be supported in Stan-math by either moving to `EigenBase` as the default in the metaprogramming or by having separate methods for Sparse Matrices.
-
-Let's look at primitive add for an example. One implementation of `add` in Stan math is
-
-```cpp
-template <typename T1, typename T2, int R, int C>
-inline Eigen::Matrix<return_type_t<T1, T2>, R, C> add(
-    const Eigen::Matrix<T1, R, C>& m1, const Eigen::Matrix<T2, R, C>& m2) {
-  check_matching_dims("add", "m1", m1, "m2", m2);
-  return m1 + m2;
-}
-```
-
-Would change to
-
-```cpp
-template <typename Derived1, typename Derived2>
-inline Eigen::PlainObjectBase<return_derived_obj<Derived1, Derived2>> add(
-    const Eigen::EigenBase<Derived1>& m1, const Eigen::EigenBase<Derived2>& m2) {
-  check_matching_dims("add", "m1", m1, "m2", m2);
-  return m1 + m2;
-}
-```
-
-Where `return_derived_obj` would deduce the correct derived return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
-
-### The Simple Way
-
-If we would rather not refactor the math library we can keep our current templates and have specializations for Sparse matrices.
+Eigen has already done a lot here, we can steal most of the functionality from them like so
 
 ```cpp
 template <typename T1, typename T2>
