@@ -232,23 +232,24 @@ inline Eigen::Matrix<return_type_t<T1, T2>, R, C> add(
 }
 ```
 
-Would change to
+Based on [this](https://stackoverflow.com/questions/57426417/function-that-accepts-both-eigen-dense-and-sparse-matrices/57427407#57427407) stackoverflow post we can do something like the following to allow this to handle both sparse and dense matrices.
 
 ```cpp
 template <typename Derived1, typename Derived2>
-inline Eigen::PlainObjectBase<return_derived_obj<Derived1, Derived2>> add(
-    const Eigen::EigenBase<Derived1>& m1, const Eigen::EigenBase<Derived2>& m2) {
-  check_matching_dims("add", "m1", m1, "m2", m2);
-  return m1 + m2;
+eigen_return_t<Derived1, Derived2> add(const Eigen::EigenBase<Derived1>& A_,
+                                       const Eigen::EigenBase<Derived2>& B_) {
+    // Pull out the Derived type                              
+    Derived1 const& A = A_.derived();
+    Derived2 const& B = B_.derived();
+    return ((A+B).eval()).transpose();
 }
 ```
 
-Where `return_derived_obj` would deduce the correct derived return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
+Where `return_derived_t` would deduce the correct derived return type based on the `Scalar` value of the `Derived*` types. This is nice because for places where Eigen supports both dense and sparse operations we do not have to duplicate code. For places where the sparse and dense operations differ we can have sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
 
 ### The Simple Way
 
 If we would rather not refactor the math library we can keep our current templates and have specializations for Sparse matrices.
-
 ```cpp
 template <typename T1, typename T2>
 inline Eigen::SparseMatrixBase<return_type_t<T1, T2>> add(
