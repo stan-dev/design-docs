@@ -46,7 +46,7 @@ Below we go over how sparse matrices can be constructed and operated on within e
 
 ## Data
 
-Sparse matrix types in the Stan language can be constructed in the data block via Coordinate List Notation using the row and column sizes, non-empty row/column indices, and values for those index positions.
+Sparse matrix types in the Stan language can be constructed in the data block via [Coordinate List](https://en.wikipedia.org/wiki/Sparse_matrix#Coordinate_list_(COO)) notation using the row and column sizes, non-empty row/column indices, and values for those index positions.
 
 ```stan
 data {
@@ -57,7 +57,7 @@ int nonzero_row_index[K]; // Non-empty row positions
 int nonzero_col_index[K]; // Non-empty col positions
 vector[N] vals; // Values in each position
 // Direct way
-sparse_matrix[N, M, nonzero_row_index, nonzero_col_index, val] A
+sparse_matrix[N, M, nonzero_row_index, nonzero_col_index, vals] A
 // Can we do this?
 sparse_matrix[N, M, nonzero_row_index, nonzero_col_index] B;
 }
@@ -90,7 +90,7 @@ val[K] = [22, 7, 3, 5, 14, 1, 17, 8]
 
 Would have the dense form of
 
-| row/col | 1  | 2 | 3  | 4 | 5  |
+| col/row | 1  | 2 | 3  | 4 | 5  |
 |---------|----|---|----|---|----|
 | 1       | 0  | 3 | 0  | 0 | 0  |
 | 2       | 22 | 0 | 0  | 0 | 17 |
@@ -105,7 +105,8 @@ Sparse matrices in this block can be defined dynamically and declared such as
 ```stan
 transformed data {
 // Could construct here as well
-sparse_matrix[N, M] A = to_sparse_matrix(N, M, nonzero_row_index, nonzero_col_index, vals);
+sparse_matrix[N, M, nonzero_row_index, nonzero_col_index] A =
+   to_sparse_matrix(N, M, nonzero_row_index, nonzero_col_index, vals);
 
 // Linear Algebra is cool
 sparse_matrix[N, N] C = A * A';
@@ -201,13 +202,13 @@ Data input formats should not need to change, less R and Python want a particula
 At the C++ level input data can be constructed to the sparse matrix through soemthing like what Ben did [here](https://github.com/stan-dev/rstanarm/blob/master/inst/include/csr_matrix_times_vector2.hpp#L18) for a revised `csr_matrix_times_vector`.
 
 ```cpp
-int outerIndexPtr[cols+1];
+int outerIndex[cols+1];
 int innerIndices[nnz];
 double values[nnz];
 // read-write (parameters)
-Map<SparseMatrix<double>> sm1(rows, cols, nnz, outerIndexPtr, innerIndices, values);
+Map<SparseMatrix<double>> sm1(rows, cols, nnz, outerIndex, innerIndices, values);
 // read only (data)
-Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndexPtr, innerIndices, values);   
+Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndex, innerIndices, values);   
 ```
 
 ## Stan Math
