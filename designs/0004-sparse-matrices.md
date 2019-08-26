@@ -283,6 +283,7 @@ There has been a _lot_ of previous discussion about sparse matrices in Stan whic
 - [Sparse Matrices in Eigen with Autodiff](https://discourse.mc-stan.org/t/sparse-matrices-in-eigen-with-autodiff/3324/6)
 - [Sparse Matrix Functional Spec](https://discourse.mc-stan.org/t/sparse-matrix-functional-spec/109)
 - [Sparse Matrices in Stan](https://discourse.mc-stan.org/t/sparse-matrices-in-stan/3129)
+- [Sparse Matrices discussion that took over anothe thread](https://discourse.mc-stan.org/t/stancon-cambridge-developer-meeting-opportunities/9743/46?u=stevo15025)
 
 ### Tensorflow
 
