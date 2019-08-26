@@ -120,7 +120,7 @@ C[10, 10] = 100.0;
 
 The assignment operation `C[10, 10] = 100.0;` works fine with Eigen as the implementation leaves room in the arrays for quick insertions. Though because the rest of Stan assumes the amount of coefficients are fixed this should be the only block where sparse matrix access to elements defined as zero valued in the bounds should be allowed.
 
-The because the sparsity pattern is given in the bounds `<>` the above multiplication result `C` will have it's own sparsity pattern deduced from the result of `A * A'`. This is a concern of Eigen and Stan-math and I'm pretty sure would not effect the Stan language.
+Because the sparsity pattern is given in the bounds `<>` the above multiplication result `C` will have it's own sparsity pattern deduced from the result of `A * A'`. This is a concern of Eigen and Stan-math and I'm pretty sure would not need anything particular in the stan compiler.
 
 ## Parameters, Transformed Parameters, and Generated Quantities
 
@@ -138,7 +138,7 @@ transformed parameters {
 
 ```
 
-The size and non-zero indices for sparse matrices in the parameter block must be from either the data block or transformed data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same full specification in each iteration of the model.
+The size and non-zero indices for sparse matrices in the parameter block must be from either the data block or transformed data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same sparsity pattern in each iteration of the model.
 
 ## Helper Functions
 
@@ -186,11 +186,10 @@ Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndex, innerIndices, v
 
 ### Templating
 
-There are two approaches to have Stan support Eigen's Sparse Matrix format.
+Sparse matrices can be supported in Stan-math by either moving to more thorough templating along with pseudo-concepts in the metaprogramming or by having separate methods for Sparse Matrices.
 
 #### The Hard way
 
-Sparse matrices can be supported in Stan-math by either moving to `EigenBase` as the default in the metaprogramming or by having separate methods for Sparse Matrices.
 
 Let's look at primitive add for an example. One implementation of `add` in Stan math is
 
@@ -203,16 +202,17 @@ inline Eigen::Matrix<return_type_t<T1, T2>, R, C> add(
 }
 ```
 
-We can use a form of pseudo-concepts to write something like the following for functions which share both Eigen dense and sparse matrix equivalents.
+We can use a form of pseudo-concepts to write something like the following for functions which share the same Eigen dense and sparse methods.
 
 ```cpp
 template <typename Mat1, typename Mat2, all_eigen_type<Mat1, Mat2>>
 inline auto add(Mat1&& m1, Mat2&& m2) {
+  check_matching_dims("add", "m1", m1, "m2", m2);
   return (m1 + m2).eval();
 }
 ```
 
-In the above, the return type without the `.eval()` will be something of the form `Eigen::CwiseBinaryOp` which all of the other math functions would have to also take in. Adding a `.eval()` at the end will force the matrix to evaluate to either a sparse or dense matrix. Once more of Stan math can take in the Eigen expression types we can remove the `.eval()` at the end.
+In the above, the return type without the `.eval()` will be something of the form `Eigen::CwiseBinaryOp<...>` which all of the other math functions would have to also take in. Adding a `.eval()` at the end will force the matrix to evaluate to either a sparse or dense matrix. Once more of Stan math can take in the Eigen expression types we can remove the `.eval()` at the end.
 
 For places where the sparse and dense operations differ we can have dense/sparse matrix template specializations. There has been a lot of discussion on this refactor in the past (see [this](https://groups.google.com/forum/#!topic/stan-dev/ZKYCQ3Y7eY0) Google groups post and [this](https://github.com/stan-dev/math/issues/62) issue). Though looking at the two forms it seems like using `A.coeff()` for access instead of `operator()` would be sufficient to handle the coefficient access error Dan saw.
 
@@ -231,7 +231,7 @@ inline Eigen::SparseMatrixBase<return_type_t<T1, T2>> add(
 
 ### Keeping Permutation Matrix from Cholesky
 
-`SimplicalCholeskybase` keeps the permutation matrix, when the user uses a `sparse_cholesky_matrix` we can pull out this permutation matrix and keep it to use in the next iteration. We do this through `EIGEN_SPARSEMATRIX_BASE_PLUGIN`, adding the permutation matrix to the input matrix. This adds a bit of state, but assuming the sparse matrices are fixed in size and sparsity this should be fine.
+`SimplicalCholeskybase` keeps the permutation matrix, when the user does a cholesky decomposition we can pull out this permutation matrix and keep it to use in the next iteration. We do this through `EIGEN_SPARSEMATRIX_BASE_PLUGIN`, adding the permutation matrix to the input matrix. This adds a bit of state, but assuming the sparse matrices are fixed in size and sparsity this should be fine.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -303,7 +303,9 @@ MxNets [`portri`](https://mxnet.incubator.apache.org/api/python/symbol/linalg.ht
 Pytorch has an experimental section for limited sparse tensor operations in [`torch.sparse`](https://pytorch.org/docs/stable/sparse.html).
 
 
-It looks like sparse matrices has been difficult for a lot of groups!
+### Template Model Builder (TMB)
+
+TMB uses a forked version of ADcpp for auto-diff and from their arvix paper seems to include sparse matrix types as well. Arvix [here](https://arxiv.org/pdf/1509.00660.pdf).
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
