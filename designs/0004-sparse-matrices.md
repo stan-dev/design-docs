@@ -314,10 +314,9 @@ TMB uses a forked version of ADcpp for auto-diff and from their arvix paper seem
 
 - Language Design
 - How this will work with the new Stan compiler?
-  - Can we deduce the sparse matrix non-zero indices for some functions like I have in the above?
+- Right now it appears the need for the same number of coefficients in each iteration is because of historically how we have done our analysis stuff. Are there also statistical concerns?
 - Will the cost of the refactor of Stan math to a more generic form be worth it?.
 - Any prior art that I've missed?
-
 
 # Appendix: (Eigen Sparse Matrix formats)
 
