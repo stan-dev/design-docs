@@ -15,11 +15,11 @@ scope of function definitions.
 1.  Extend object sized and unsized type language to functional types.
 
 2.  Allow general expressions, variables, function arguments of
-    function types to support functional programming. 
+    function types to support functional programming.
 
 3.  Allow functions to be defined in any scope.
 
-4.  Allow reference to variables in static lexical scope to be
+4.  Allow values of constant variables in lexical scope to be
     captured via closures without passing as arguments.
 
 
@@ -40,7 +40,7 @@ real mult(row_vector x, vector y) {
   real prod = 0;
   for (n in 1:cols(x))
     prod += x[n] * y[n];
-  return prod; 
+  return prod;
 }
 ```
 
@@ -73,8 +73,8 @@ real compose_apply(real(real) f, real(real) g, real x) {
 The argument `f` is of type `real(real), i.e., a function from reals
 to reals.  The argument `g` is of the same type.  The final argument
 `x` is of type real.  The function simply applies `g` to `x`, then
-applies `f` to the result.  The type of `compose_apply` is 
-`real(real(real), real(real), real)`.  
+applies `f` to the result.  The type of `compose_apply` is
+`real(real(real), real(real), real)`.
 
 Higher-order functions can also return functions as results.  For
 example, consider the following version of multiplication that takes
@@ -196,7 +196,7 @@ More specifically, the value is a *closure* beause the variable `x`
 takes its value from the value of `x` in an enclosing scope, here the
 function argument `row_vector x`.  Stan employs *static lexical
 scoping*, meaning that closures defined by lambdas such as the one
-above capture references to variables in enclosing scopes, including
+above capture values of variables in enclosing scopes, including
 earlier in the Stan program.
 
 For example, we can capture data variables by defining a function in
@@ -210,47 +210,54 @@ data {
 transformed data {
   real foo(real z) {
     return x * y + z;
-  }    
+  }
 }
 ```
 
 The function `foo` defined in the transformed data block uses
-variables `x` and `y`, which act as references to the variables `x`
-and `y` defined in the data block.  The same approach may be used to
+variables `x` and `y`, which caputre the values of the variables `x`
+and `y` defined in the data block.   The same approach may be used to
 capture parameters by defining a function in the transformed
 parameters block.  The type of `foo` is simply `real(real)`, as it
 takes a real argument and returns a real result;  under the hood, the
-function stores references to the variables `x` and `y` in the
+function can store constant references to the variables `x` and `y` in the
 enclosing scope for use when the function is evaluated.
 
 Lambdas may also use closures.  For example, if the following appeared
-in a block allowing statements, 
+in a block allowing statements, such as the top of the transformed
+data block,
 
 ```
-real x = 12;
-real(real) h = (real u) { return u + x; };
-print(h(5)); 
+transformed data {
+  real x = 12;
+  real(real) h = (real u) { return u + x; };
+  print(h(5));
+  ...
 ```
 
-the value 17 will be printed.  On the other hand, if we redefine `x`
-before calling the function, the current value will be used.  That
-means that the following program fragment,
+the value 17 will be printed.  If the value subsequently changes in
+the transformed data block, the original value will be used.
 
 ```
-real x = 12;
-real(real) h = (real u) { return u + x; };
-x = 1;
-print(h(5)); 
+transformed data {
+  real x = 12;
+  real(real) h = (real u) { return u + x; };  // ILLEGAL CAPTURE OF x
+  x = 1;
+  print(h(5));
 ```
 
-will print 6, because the value of `x` used in `h(5)` will be 1.
+will still print `17`, because the value of `x` is captured, not a
+reference.
 
-This style of scoping for closures captures variables by reference,
+Capture of local variables that are not block variables will not be
+allowed.
+
+This style of scoping for closures captures variables by value,
 resolving which variable's value to use by static lexical scoping.
 This latter term just means the variable to be used is known at
 compile time and scoping is to the (lexical) environment in which the
-lamda is defined. Any variable in scope (that is, available to be used
-or printed) may be used in a lambda.
+lamda is defined. Any block variable in scope (that is, available to
+be used or printed) may be used in a lambda.
 
 Now we can put everthing together with an example to see how
 composition might work.
@@ -263,7 +270,7 @@ real(real)(real(real))(real(real)) compose
          return f(g(x));
        }
      }
-  };     
+  };
 real(real) sq = (real x) { return x^2; }
 real(real) p1 = (real u) { return u + 1; }
 real(real) sq_p1 = compose(sq, p1);
@@ -278,13 +285,13 @@ giving them names,
 
 ```
 real(real) sq_p1
-  = compose((real x) { return x^2; }, 
+  = compose((real x) { return x^2; },
             (real u) { return u + 1; });
 ```
 
 #### Dangling references
 
-Closures capturing local variables bring the risk of dangling
+With pass by value, we do not run the risk of capturing dangling
 references.  Consider the following example:
 
 ```
@@ -293,38 +300,16 @@ transformed data {
   {
     real y = 3;
     f = (real u) { return u + y; };
-    real a = f(5);  // OK: y = 3, so a = 8
+    real a = f(5);  // DEFINED --- y still in scope
   }
-  real b = f(7);    // ERROR: y out of scope
+  real b = f(7);    // UNDEFINED --- y out of scope
 ```
 
 Recall that the inner braces define a local scope; as soon as the last
 statement executes, local variables go out of scope and have undefined
-values.  The risk in using closures to capture local variables is that
-the closure may survive beyond the variable to which it is referring
-if it is captured by assignment or returned from a function.
-
-In the above example, when `f(5)` is evaluated in the local scope, the
-value of `y` is available, with value 3.  This allows the inner term
-`u + y` to be evaluated in the function, resulting in a value for `a`
-of 8.  In stark contrast, the evaluation of `f(7)` outside of the
-scope for `y` results in undefined behavior---the value of `y` is no
-longer available from the inner scope as we have returned from that
-scope.  The value of `f` persists outside of the local scope, but it
-contains a reference to a variable `y` that no longer exists.  This
-kind of dangling reference needs to be avoided.
-
-
-
-Explain the proposal as if it was already included in the project and you were teaching it to another Stan programmer in the manual. That generally means:
-
-- Introducing new named concepts.
-- Explaining the feature largely in terms of examples.
-- Explaining how Stan programmers should *think* about the feature, and how it should impact the way they use the relevant package. It should explain the impact as concretely as possible.
-- If applicable, provide sample error messages, deprecation warnings, or migration guidance.
-- If applicable, describe the differences between teaching this to existing Stan programmers and new Stan programmers.
-
-For implementation-oriented RFCs (e.g. for compiler internals), this section should focus on how compiler contributors should think about the change, and give examples of its concrete impact. For policy RFCs, this section should provide an example-driven introduction to the policy, and explain its impact in concrete terms.
+values.  Allowing capture of local vaiables by reference risks
+capturing variables that disappear before the closure is used.  This
+is one of the motivations for not capturing variables by reference.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -425,11 +410,11 @@ they denote functions rather than values and have function types.
 ## Changes to Standard Functions
 
 Allow functions to be defined in any scope.  Allow function
-definitions and lambda expressions to
-capture variables in scope by references.  
+definitions and lambda expressions to capture variables in scope by
+value.
 
 Deprecate the functions block;  functions declared there can be
-declared in the transformed data block.  
+declared in the transformed data block.
 
 Standard function definitions of the form
 
@@ -457,11 +442,11 @@ Nothing changes conceptually about assignment.  The right-hand side
 type must still be assignable to the left-hand side type, which for
 functions, means they have the same function type.  The only question
 is whether to require strict matching of types or support full
-covariance and contravariance.  
+covariance and contravariance.
 
 ## Implementation
 
-Lambdas can be mapped directly to C++ lambdas with default reference
+Lambdas can be mapped directly to C++ lambdas with default value
 closures.  This will work because the scope of the compiled C++ is the
 same as that of the Stan program.
 
@@ -485,17 +470,13 @@ I/O programs involving typed variables.
 This is really two proposals, one for closures (for capturing
 variables in scope) and one for lambdas (for anonymous functions).
 Although they naturally go together, it would be possible to adopt
-closures without lambdas or vice-versa.  
+closures without lambdas or vice-versa.
 
 Disallowing lambdas would complicate standard functional idioms like
 maps, which rely on simple inline anonymous lambdas.
 
 Disallowing closures requires passing all values to higher order
 functions as arrays along with the packing and unpacking required.
-
-The main unresolved design issues are whether to capture everything by
-refernece or by value, and whether to support proper covarianct and
-contravariant typing for containers and functions.
 
 # Prior art
 [prior-art]: #prior-art
@@ -513,13 +494,16 @@ unsized types directly mirrors the type syntax of C++11.
 
 C++ allows an explicit specification of whether variables are captures
 by reference or by value; the proposal here is equivalent to having
-the captures at the front of the lambda expression be `[&]`, which
+the captures at the front of the lambda expression be explicitly
+specified as captured by reference, `[=]`, which
 specifies that all automatic variables used in the body of the lambda
-be captured by reference.  Automatic variables are those without
+be captured by value.  Automatic variables are those without
 explicit capture declarations; all variables in this proposal for Stan
 will behave as automatic variables.
 
 #### R
+
+R captures by reference using dynamic lexical scope.
 
 In R, the expression `function(u) { return(1 / (1 + exp(-u))) }`
 defines a function that denotes the inverse logit function.  It can be
@@ -566,7 +550,10 @@ variable scopes at runtime.  This proposal for Stan is to use the more
 traditional approach of static lexical scoping, which is what is used
 in C++.
 
+
 #### Python
+
+Python captures variables by reference.
 
 Python allows lambdas such as `lambda u : 1 / (1 + exp(-u))`.
 Multiple argument functions my be `lambda x, y : (x**2 + y**2)**0.5`.
@@ -583,26 +570,14 @@ example demonstrates.
 10.770329614269007
 ```
 
-This is the same capture-by reference that is used by R and this
-proposal for Stan, as well as the behavior for C++ if the captures
-specification takes all implicit captures by reference (`[&]`).
+This is the same capture-by reference that is used by R as well as the
+behavior for C++ if the captures specification takes all implicit
+captures by reference (`[&]`).  We are explicitly proposing to capture
+variables by value here.
 
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-1.  Will Stan permit potentially risky capture of local variables and
-    function arguments?  If it is allowed (as it presumably will be,
-    as it's very very limiting not to) is there a way to flag cases
-    that might be potentially dangerous and provide warnings?  
-
-2.  What should the syntax look like?  This proposal just follows the
-	C++ syntax for both types and closures.
-
-3.  Should variables be captured by value instead of reference? That
-    avoids them changing later and avoids dangling references, but it
-    also requires copies and is counterintuitive for those used to
-    R or Python.
-
-4.  Should full covariance and contravariance for function and array
-    types be required for assignment (including function calls)?
+None at this point unless someone wants to suggest an alternative
+syntax.  I just borrowed the C++ syntax.
