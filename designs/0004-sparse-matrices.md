@@ -90,7 +90,7 @@ int N; // Rows
 int K; // number non-empty
 int nz_row_ind[K]; // Non-empty row positions
 // Can we do this?
-sparse_vector<nz_rows=nz_row_ind>[N] B;
+sparse_vector[nz_row_ind, N] B;
 ```
 
 The above sparse matrix example with values
@@ -122,7 +122,7 @@ Sparse matrices in this block can be defined dynamically and declared such as
 ```stan
 transformed data {
 // Could construct here as well
-sparse_matrix<nz_rows=nz_row_ind, nz_cols=nz_col_ind>[nz_row_ind, nz_col_ind, N, M] A =
+sparse_matrix[nz_row_ind, nz_col_ind, N, M] A =
    to_sparse_matrix(nz_row_ind, nz_col_ind, N, M, vals);
 
 // Linear Algebra is cool
@@ -139,7 +139,7 @@ Parameters can be defined as above for data or deduced from the output of other 
 ```stan
 parameters {
   // Defining sparse matrices in parameters needs the non-zero elements
-  sparse_matrix<nz_rows=nz_row_ind, nz_cols=nz_col_ind>[N, M] foo;
+  sparse_matrix[nz_row_ind, nz_col_ind, N, M] foo;
 }
 transformed parameters {
   // Non-zero elements are deduced by the operation on x
