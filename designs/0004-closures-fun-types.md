@@ -249,8 +249,7 @@ transformed data {
 will still print `17`, because the value of `x` is captured, not a
 reference.
 
-Capture of local variables that are not block variables will not be
-allowed.
+
 
 This style of scoping for closures captures variables by value,
 resolving which variable's value to use by static lexical scoping.
@@ -289,7 +288,36 @@ real(real) sq_p1
             (real u) { return u + 1; });
 ```
 
-#### Dangling references
+
+
+
+
+## Block variables only to prevent dangling references
+
+Capture of local variables that are not block variables will not be
+allowed.  (Block variables include those defined at the top level
+scope of data, transformed data, parameters, transformed parameters,
+and generated quantities;  it excludes the model block, which does not
+have any block-level variables.)
+
+This ensures that the variables remain alive even if they
+would otherwise produce dangling references.  For example, the
+following example is illegal because `a` is a local variable.
+
+```
+model {
+  real a = 10;
+  real(real) times_a = (real u) { return u * a; }  // ILLEGAL CAPTURE
+```
+
+In contrast, the following is acceptable, because `a` is a block variable.
+
+```
+transformed data {
+  real a = 10;
+  real(real) times_a = (real u) { return u * a; }
+```
+
 
 With pass by value, we do not run the risk of capturing dangling
 references.  Consider the following example:
@@ -313,6 +341,27 @@ is one of the motivations for not capturing variables by reference.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
+
+#### Variables captured by closure become constant
+
+Once a variable is captured by a closure, it can no longer be
+modified.  It is thus illegal to have
+
+```
+transformed data {
+  real a = 10;
+  real(real) times_a = (real u) { return u * a; }
+  a = 5;  // ILLEGAL MODIFICATION OF CAPTURED VARIABLE
+```
+
+The result is that closures themselves become constant because there
+is no way to change their behavior after they are created.
+
+With the restriction to block variables discussed in the previous
+section, we should be able to capture variables either by value (`[=]`
+in C++) or by constant reference to a constant (`[&]` is sufficient because we do
+not allow modification of variables once they are captured).
+
 
 ## Type system
 
