@@ -164,6 +164,13 @@ int K = num_nz_elements(x);
 matrix[K, 3] = get_nz_elements(x);
 ```
 
+There can also be methods to bind sparse matrices together by rows or columns
+
+```stan
+sparse_matrix G = rbind(A,B);
+sparse_matrix F = cbind(A,B);
+```
+
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
