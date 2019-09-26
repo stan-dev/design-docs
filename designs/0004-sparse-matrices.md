@@ -39,14 +39,27 @@ A `sparse_matrix` type directly in the stan language would support all existing 
 
 Most of the below comes from the [functional-spec](https://github.com/stan-dev/stan/wiki/Functional-Spec:-Sparse-Matrix-Data-Types) for sparse matrices.
 
-A sparse matrix/vector differs from a standard matrix/vector only in the underlying representation of the data.
+A sparse matrix/vector differs from a standard matrix/vector in the underlying representation of the data and that, at least for the initial design, no explicit indexing is allowed within a sparse matrix.
+
+
+Sparse matrices dimensions are defined by the dimensions of the entire matrix as well as the elements that are nonzero. Just like how you cannot assign to a matrix of different dimensions you cannot assign a sparse matrix with one sparsity pattern to another with a separate sparsity pattern. The example below shows illegal assignment.
+
+```stan
+sparse_matrix[nz_row, nz_col, N, M] A;
+
+sparse_matrix[nz_row_alt, nz_col_alt, N, M] B;
+
+sparse_matrix B = A; // illegal!
+```
+
+For sparse matrices that are used in inversion and factorization a common optimization technique is to reorder the rows and columns such that the structure is easier for algorithms to traverse. Upon creation of square sparse matrices it may be beneficial to order them once after initial construction.
 
 Below we go over how sparse matrices can be constructed and operated on within each stan block.
 
 
 ## Data
 
-Sparse matrix types in the Stan language can be constructed in the data block via [Coordinate List](https://en.wikipedia.org/wiki/Sparse_matrix#Coordinate_list_(COO)) notation using the row and column sizes, non-empty row/column indices, and values for those index positions. The non-zero (NZ) row and column indices are brought in as bounds in the `<>`. Setting these as bounds expands the definition of what can go into `<>` and should be discussed more.
+Sparse matrix types in the Stan language can be constructed in the data block via [Coordinate List](https://en.wikipedia.org/wiki/Sparse_matrix#Coordinate_list_(COO)) notation using the row and column sizes, non-empty row/column indices, and values for those index positions. The non-zero (NZ) row and column indices are brought in as bounds in the `[]`.
 
 ```stan
 data {
@@ -56,11 +69,12 @@ int K; // number non-empty
 int nz_row_ind[K]; // Non-empty row positions
 int nz_col_ind[K]; // Non-empty col positions
 
-sparse_matrix<nz_rows=nz_row_ind nz_cols=nz_col_ind>[N, M] A
+sparse_matrix[nz_row_ind, nz_col_ind, N, M] A
 }
 ```
 
 With proper IO the data sparsity pattern can be brought in automatically via a json or rdump list of lists.
+
 ```stan
 data {
 int N; // Rows
@@ -69,7 +83,7 @@ sparse_matrix[N, M] A
 }
 ```
 
-Though not necessary, we can also add sparse vectors.
+Though not in the initial implementation, we can also add sparse vectors.
 
 ```stan
 int N; // Rows
@@ -108,17 +122,13 @@ Sparse matrices in this block can be defined dynamically and declared such as
 ```stan
 transformed data {
 // Could construct here as well
-sparse_matrix<nz_rows=nz_row_ind, nz_cols=nz_col_ind>[N, M] A =
-   to_sparse_matrix(N, M, nz_col_ind, nz_col_ind, vals);
+sparse_matrix<nz_rows=nz_row_ind, nz_cols=nz_col_ind>[nz_row_ind, nz_col_ind, N, M] A =
+   to_sparse_matrix(nz_row_ind, nz_col_ind, N, M, vals);
 
 // Linear Algebra is cool
-sparse_matrix[N, N] C = A * A';
-// For data this is fine
-C[10, 10] = 100.0;
+sparse_matrix C = A * A';
 }
 ```
-
-The assignment operation `C[10, 10] = 100.0;` works fine with Eigen as the implementation leaves room in the arrays for quick insertions. Though because the rest of Stan assumes the amount of coefficients are fixed this should be the only block where sparse matrix access to elements defined as zero valued in the bounds should be allowed.
 
 Because the sparsity pattern is given in the bounds `<>` the above multiplication result `C` will have it's own sparsity pattern deduced from the result of `A * A'`. This is a concern of Eigen and Stan-math and I'm pretty sure would not need anything particular in the stan compiler.
 
@@ -139,6 +149,10 @@ transformed parameters {
 ```
 
 The size and non-zero indices for sparse matrices in the parameter block must be from either the data block or transformed data block. This is because Stan's I/O and posterior analysis infrastructure assumes the same sparsity pattern in each iteration of the model.
+
+**NOTE**
+
+After speaking with Dan Simpson him and Aki would not like sparse matrices to be available in params unless they are used in temporary scopes (at least that's what I have written in my notes so apologies if I wrote that down incorrectly). I'm not sure about this and think we should discuss it.
 
 ## Helper Functions
 
@@ -182,7 +196,11 @@ Map<SparseMatrix<double>> sm1(rows, cols, nnz, outerIndex, innerIndices, values)
 Map<const SparseMatrix<double>> sm2(rows, cols, nnz, outerIndex, innerIndices, values);   
 ```
 
+For the initial implementation data will be read in via a for loop and insertion method.
+
 ## Stan Math
+
+To preserve the ordering of a matrix for factorization and inversion we should use `EIGEN_SPARSEMATRIX_BASE_PLUGIN` to store the sparsity structure.
 
 ### Templating
 
