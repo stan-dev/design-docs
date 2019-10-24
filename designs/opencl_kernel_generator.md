@@ -55,6 +55,13 @@ appropriate methods for constructing kernel source. Matrices and scalars on the 
 not. So they need to be wrapped in appropriate wrapper that is an operation whenever they are
 used in a kernel generator expression.
 
+If an expression is used multiple times the kernel associated with it should be cached. So 
+regeneration and recompilation of kernel is not necessary at every time an expression is 
+evaluated. Instead kernel is generated only at first use. Cached kernel can also be reused
+between instances of expressions consisting of same operands, but operating on different data, 
+even if the matrices have different sizes.
+
+
 #### Example
 
 ```c++
@@ -74,7 +81,7 @@ back to global memory.
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Each kernel must be compiled. If many kernels are used and each only once, long compilations times could make this slower than one kernel per operation. This is not an issue in Stan, since many leapfrog steps are executed.
+Even with caching each kernel must be compiled the first time it is used. If many kernels are used and each only once, long compilations times could make this slower than one kernel per operation. This is not an issue in Stan, since many leapfrog steps are executed.
 
 # Prior art
 [prior-art]: #prior-art
