@@ -14,8 +14,10 @@ OpenCL kernel in a JIT fashion and execute it to calculate the result of the exp
 # Motivation
 [motivation]: #motivation
 
-Using expression templates is much simpler than writing OpenCL kernels by hand and it does 
-not require knowledge of OpenCL and parallel programming.
+OpenCL routines which do not require communication between threads and decompose into simple 
+arithmetic operations follow a simple form. A JIT compiler that can take in arithmetic operations 
+and create these OpenCL routines on the fly would be much simpler and more efficient than writing 
+these OpenCL kernels by hand.
 
 Using one kernel for multiple operations is faster than using one kernel per operation. Each 
 kernel must load its arguments from global global GPU memory and store results back. Memory 
@@ -33,7 +35,9 @@ not most of ones needed in Stan Math should qualify.
 
 A kernel generator expression consists of operations, for example addition, exponentiation, 
 transposition. While not operations in mathematical sense, accesses to matrices and scalars are also operations 
-in kernel generator.
+in kernel generator. We can define these operations as classes using the curiously recurring 
+template pattern (CRTP) to generate a compound class of templated expressions. See chapter 27 of C++ 
+Templates - The Complete Guide for a more detailed explanation of this pattern.
 
 Each operation is implemented as a templated class. When instantiated those templates are given
 types of the subexpressions that are arguments to the particular operation. User-facing 
@@ -74,6 +78,39 @@ a struct that is templated by both types of the expression and the result.
 
 # Example and reference level explanantion
 
+Binary and Unary operations are defined as templated classes inheriting from a base `operation` 
+class. The `operation` class is a CRTP interface layer which defines the necessary operations 
+that `Derived` classes need to implement. The class `binary_operation` is the base that all 
+over binary operations are derived from. For example, addition is defined as
+
+```cpp
+template <typename T_a, typename T_b>
+class addition__ : public binary_operation<addition__<T_a, T_b>, T_a, T_b> {
+ public:
+  addition__(T_a&& a, T_b&& b)
+      : binary_operation<addition__<T_a, T_b>, T_a, T_b>(
+            std::forward<T_a>(a), std::forward<T_b>(b), "+") {}
+};
+
+template <typename T_a, typename T_b,
+          typename = require_all_valid_expressions_t<T_a, T_b>>
+inline addition__<as_operation_t<T_a>, as_operation_t<T_b>> operator+(T_a&& a, T_b&& b) {
+  return {as_operation(std::forward<T_a>(a)),
+          as_operation(std::forward<T_b>(b))};
+}
+```
+
+In the above we have the classic CRTP inheritance style for expression templates, a perfect forwarding 
+constructor, and an `operator+` that the user calls. The constructor in the above calls the 
+`binary_operator` constructor while passing the simple operator `+`. The `+` is stored as `op_` in the 
+`binary_operator` instantiation and used during kernel construction in the `generate()` method of 
+`binary_operator`. The `generate()` method for binary operator is not called until the assignment operator 
+to a matrix_cl is called. Once the assignment operator is called the expression template class's `eval()` 
+method is called which in turn calls `operation`'s  `evaluate_into()`, which then in turn finally calls 
+`generate()` to take the expressions matrices and operations and create the appropriate OpenCL kernel.  
+
+Those templates are instantinated as shown in an example:
+
 ```c++
 matrix_cl<double> a, b;
 double c;
@@ -92,12 +129,73 @@ operator* wraps scalar in scalar accessing operation that is templated with the 
 references that and the addition as its arguments - resulting in an object of type
 `elewise_multiplication_<scalar_<double>, addition_<load_<matrix_cl<double>&>, load_<matrix_cl<double>&>>>`. 
 
-When assigned to a matrix the expression 
-generates the opencl kernel. Internally `d` is also wrapped into `load_<matrix_cl<double>&>`. 
-Matrix access operations generate code for loading matrix elements from
- global memory. Addition generates code for adding them together.
+When assigned to a matrix the expression generates the opencl kernel. Internally in `operator=()`, 
+`d` is also wrapped into `load_<matrix_cl<double>&>`. Matrix access operations generate code for 
+loading matrix elements from global memory. Addition generates code for adding them together.
 Multiplication multiplies the result with the scalar. `d`'s wrapper generates code for storing the 
-back to global memory. 
+back to global memory.
+
+When the `evaluate_into()` method is called for this kernel it will begin creating the kernel signature 
+and body. The `scalar_<double>` will add `double [TYPE] [NAME]` to the kernel signature. Name here is 
+generated to be unique for each operation in the kernel. Type is the template parameter of `scalar_` - 
+in this case `double`.
+
+The `load_<matrix_cl<double>>` will add `__global [TYPE]* [NAME], int [NAME]_rows, int [NAME]_view` to 
+the kernel signature.  The kernel's body will define a private variable and then assign the threads array 
+cell into the private variable for that particular object. That assigment is skipped if the threads array 
+cell is the part of a triangular matrix that is equal to 0. The pattern will look as follows:
+
+```opencl
+double [NAME] = 0;
+if (!((!contains_nonzero([NAME]_view, LOWER) && j < i) ||
+     (!contains_nonzero([NAME]_view, UPPER) && j > i))) {
+  [NAME] = [NAME]_global[i + [NAME]_rows * j];
+}
+```
+
+The `generate()` method for binary operations will add their `op_` to the OpenCL kernel working on the 
+named values of the private variables of their arguments and creating a private variable 
+for compound expressions. In the example above `elewise_multiplication_` and `addition_` would generate 
+the following code in kernel body:
+
+```opencl
+double var4 = var2 + var3;
+double var5 = var1 * var4;
+```
+
+Finally, the assignment to a `matrix_cl<T>` creates a `matrix_cl<T>` of the appropriate size which is 
+added to the end of the signature and assigned into.
+
+```opencl
+var5_global[i + var5_rows * j] = var4;
+```
+
+Putting this all together we can see the kernel for the 
+`elewise_multiplication_<scalar_<double>, addition_<load_<matrix_cl<double>&>, load_<matrix_cl<double>&>>>` 
+decomposes into:
+
+```opencl
+kernel void calculate(__global double var1,
+   __global double* var2_global, int var2_rows, int var2_view,
+   __global double* var3_global, int var3_rows, int var3_view
+   __global double* var6_global, int var6_rows, int var6_view){
+  int i = get_global_id(0);
+  int j = get_global_id(1);
+  double var1 = 0;
+  if (!((!contains_nonzero(var1_view, LOWER) && j < i) ||
+    (!contains_nonzero(var1_view, UPPER) && j > i))) {
+    var1 = var1_global[i + var1_rows * j];
+  }
+  double var2 = 0;
+  if (!((!contains_nonzero(var2_view, LOWER) && j < i) ||
+   (!contains_nonzero(var2_view, UPPER) && j > i))) {
+     var2 = var2_global[i + var2_rows * j];
+  }
+  double var4 = var2 + var3;
+  double var5 = var1 * var4;
+  var6_global[i + var6_rows * j] = var5;
+}
+```
 
 After the kernel is compiled it is cached into 
 `static operation<elewise_multiplication_<scalar_<double>, addition_<load_<matrix_cl<double>&>, load_<matrix_cl<double>&>>>>::cache<load<matrix_cl<double>&>::kernel`
@@ -105,7 +203,9 @@ After the kernel is compiled it is cached into
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Even with caching each kernel must be compiled the first time it is used. If many kernels are used and each only once, long compilations times could make this slower than one kernel per operation. This is not an issue in Stan, since many leapfrog steps are executed.
+Even with caching each kernel must be compiled the first time it is used. If many kernels are used and each 
+only once, long compilations times could make this slower than one kernel per operation. This is not an issue 
+in Stan, since many leapfrog steps are executed.
 
 # Prior art
 [prior-art]: #prior-art
