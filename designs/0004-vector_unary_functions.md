@@ -11,7 +11,7 @@ The proposed changes introduce a framework for extending unary vector functions 
 # Motivation
 [motivation]: #motivation
 
-Currently, for a function to work with these different vector types (and containers of these vectors types), a different specialisation is required for each. This results in a large amount of code duplication and additional maintenance burden. By implementing a general framework, rather than individual specialisations, the function only needs to be defined once for it to work with all vector types (as well as containers of these vector types).
+Currently, for a function to work with these different vector types (and containers of these vector types), a different specialisation is required for each. This results in a large amount of code duplication and additional maintenance burden. By implementing a general framework, rather than individual specialisations, the function only needs to be defined once for it to work with all vector types (as well as containers of these vector types).
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
