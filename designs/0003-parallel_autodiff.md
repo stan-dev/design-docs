@@ -11,8 +11,6 @@ capabilities of Stan math. This RFC proposes to introduce a new
 parallel map with automatic sharding and a parallel reduce which
 combines automatic sharding with vectorization.
 
-
-
 # Motivation
 [motivation]: #motivation
 
@@ -22,7 +20,8 @@ restrictions:
 1. Very user unfriendly due to the requirement to pack and unpack data
    and parameters passed into the function.
 2. The user must provide a sensible sharding block size.
-3. Vectorization must be traded for parallelism in most applications (users have to pack work into shards).
+3. Vectorization must be traded for parallelism in most applications
+   (users have to pack work into shards).
 
 In short, we currently make it very hard for users to use parallelism
 and moreover the current facility cannot speed up problems where we
@@ -74,17 +73,19 @@ constexpr T parallel_reduce_sum(InputIt first, InputIt last, T init,
 ```
 
 The function signatures follow C++ standard library conventions. The
-It are iterators which are assumed to allow for random access, the
+`InputIt` are iterators which are assumed to allow for random access, the
 function objects are passed by value and these are expected to have
-signature as explained below. How these functions are exposed in the
-Stan language will depend on the forthcoming features closures and lambdas. As these are not yet available, the functionality could be exposed in Stan with custom c++ user defined functions like this
+signatures as explained below. How these functions are exposed in the
+Stan language will depend on the forthcoming features closures and
+lambdas. As these are not yet available, the functionality could be
+exposed in Stan with custom c++ user defined functions like this
 
 ˋˋˋstan
 functions {
   // runs reduce over the index range start to end. Mapping from
   // data-index set to group indices pre-stored in gidx
   real hierarchical_reduce(int start, int end, int[] y, vector log_lambda_group, int[] gidx) {
-    return poisson_log_lpmf(y[start:end]| log_lambda_group[gidx[start:end]]);   
+    return poisson_log_lpmf(y[start:end]| log_lambda_group[gidx[start:end]]);
   }
 
   // user function defined in C++ which calls parallel_reduce_sum with a
@@ -101,27 +102,70 @@ functions {
 }
 ˋˋ
 
-The respective user defined C++ functions merely generate small lambda functors calling the stan user functions and pass these to the C++ signatures from above. The complete source of the above example is given in the appendix.
+The respective user defined C++ functions merely generate small lambda
+functors calling the stan user functions and pass these to the C++
+signatures from above. The complete source of the above example is
+given in the appendix.
 
-The proposed C++ parallel reduce and map are formulated with general c++ signatures as they are expected to be useful as utility functions of their own in order to use them as building blocks to create super nodes which themselves execute code in parallel.
+The proposed C++ parallel reduce and map are formulated with general
+c++ signatures as they are expected to be useful as utility functions
+of their own in order to use them as building blocks to create super
+nodes which themselves execute code in parallel.
 
 ## Parallel Automatic Differentiation Requirements
 
-The proposed functions allow for out of order execution of computationally independent tasks in different processes (threads). For the reverse mode autodiff tape a per process/thread global ad tape is created in order to track all operations needed to calculate the gradient of the target function. The calculations occur in two stages. During the first forward sweep the global ad tape is created and the resulting tape represents a topological sort of the operations making up the target function. In the second stage, the partial derivatives are propagated along the ad tape to calculate the final gradient of the target quantity wrt to operands of interest. The aim of this RFC is to enable parallelism during the *forward sweep* when the ad tape is created.
+The proposed functions allow for out of order execution of
+computationally independent tasks in different processes
+(threads). For the reverse mode autodiff tape a per process/thread
+global ad tape is created in order to track all operations needed to
+calculate the gradient of the target function. The calculations occur
+in two stages. During the first forward sweep the global ad tape is
+created and the resulting tape represents a topological sort of the
+operations making up the target function. In the second stage, the
+partial derivatives are propagated along the ad tape to calculate the
+final gradient of the target quantity wrt to operands of interest. The
+aim of this RFC is to enable parallelism during the *forward sweep*
+when the ad tape is created.
 
 Pre-requisites:
-- all calculations during parallel reduce or map must be independent from one another
-- each calculation must only depend on operands created prior to entering the parallel reduce or map (and these must not be altered)
+- all calculations during parallel reduce or map must be independent
+  from one another
+- each calculation must only depend on operands created prior to
+  entering the parallel reduce or map (and these must not be altered)
 
-Requirements for parallel reverse mode autodiff during forward sweep ad tape creation:
-- independent chunks of work can be reordered (no more unique topological sort of operations)
+Requirements for parallel reverse mode autodiff during forward sweep
+ad tape creation:
+- independent chunks of work can be reordered (no more unique
+  topological sort of operations)
 - possibility to create parts of the ad tape in different processes
-- actual chunking of independent tasks should be variable (to allow the Intel TBB to control it)
+- actual chunking of independent tasks should be variable (to allow
+  the Intel TBB to control it)
 
 Post-conditions:
-- the reverse mode sweeps will produce the same partials, but numerical difference attributed to floating point arithmetic reorderings are admissible
-- after parallel execution of independent chunks, the independent chunks shall be stitched together to form again a single large tape *or* a tree like structure stores the information as to which parts of the independent chunks belong together.
+- the reverse mode sweeps will produce the same partials, but
+  numerical difference attributed to floating point arithmetic
+  reorderings are admissible
+- after parallel execution of independent chunks, the independent
+  chunks shall be stitched together to form again a single large tape
+  and alternative approach is to avoid the stitching and instead grow
+  a tree like structure which stores the information as to what parts
+  of the independent chunks belong together. For the reasons given in
+  the rationale and alternatives section, the suggestion here is to go
+  for now with the merging approach.
 
+
+A graphical representation of the parallel forward sweep is shown
+below.
+
+![forward parallel](0003-parallel_forward.jpeg)
+
+Enabling parallelism for the reverse sweep is possible, but requires
+greater control over the inputs as outlined in the appendix of this
+RFC. This is a complimentary feature which can be added at a later
+stage without additional structural changes to the AD structure in
+general. Instead more flexible and general `parallel_map` and
+`parallel_reduce` signatures are needed which are essentially n-ary
+functions which forward the shared arguments to the user functor.
 
 ## Parallel Map
 
@@ -149,58 +193,6 @@ actual shape is allowed to vary between elements. A direct export of
 the function to the Stan language may thus need additional
 considerations.
 
-Here is a simple unit test which demonstrates the use of the
-`parallel_map`:
-
-```c++
-// we evaluate the following binary function over a large number of
-// inputs
-
-// fun1(x, y) = (x^2 * y) + (3 * y^2)
-struct fun1 {
-  template <typename T>
-  inline T operator()(const Matrix<T, Dynamic, 1>& x) const {
-    return x(0) * x(0) * x(1) + 3.0 * x(1) * x(1);
-  }
-};
-
-TEST(Base, parallel_map) {
-  const int num_jobs = 1000;
-  // Here we use simple integer indices for the iterators
-  typedef boost::counting_iterator<int> count_iter;
-
-  vector_d x_ref_2(num_jobs);
-
-  for (int i = 0; i < num_jobs; ++i) {
-    x_ref_2(i) = 7 + i;
-  }
-
-  // UnaryFunction which returns a Eigen column vector of length 1
-  auto loop_fun = [&](int i) -> vector_d {
-    fun1 f;
-    vector_d res(1);
-    vector_d iarg(2);
-    iarg << 5, x_ref_2(i);
-    res(0) = f(iarg);
-    return res;
-  };
-
-  // the concatenate_row takes the returned std::vector<vector_d>
-  // and appends them horizontally together
-  vector_d parallel_result = stan::math::concatenate_row(
-      stan::math::parallel_map(count_iter(0), count_iter(num_jobs), loop_fun));
-
-  for (int i = 0; i < num_jobs; ++i) {
-    vector_d x_ref(2);
-    x_ref << 5, x_ref_2(i);
-    double fx_ref = parallel_result(i);
-    EXPECT_FLOAT_EQ(x_ref(0) * x_ref(0) * x_ref(1) + 3 * x_ref(1) * x_ref(1),
-                    fx_ref);
-  }
-
-  stan::math::recover_memory();
-}
-```
 
 
 ## Parallel Reduce
@@ -227,65 +219,8 @@ slice of data to do the actual reduction over. The actual data
 involved then must be part of the closure of the function object
 BinaryFunction passed into the facility.
 
-In c++ code using the `parallel_reduce_sum` may look as:
-
-```c++
-// reduce functor which is the BinaryFunction
-// here we use iterators which represent integer indices
-template <typename T>
-struct count_lpdf {
-  const std::vector<int>& data_;
-  const T& lambda_;
-
-  count_lpdf(const std::vector<int>& data, const T& lambda)
-      : data_(data), lambda_(lambda) {}
-
-  // does the reduction in the sub-slice start to end
-  inline T operator()(std::size_t start, std::size_t end) const {
-    const std::size_t elems = end - start + 1;
-    std::vector<int> partial_data;
-    partial_data.insert(partial_data.end(), data_.begin() + start,
-                        data_.begin() + end + 1);
-    return stan::math::poisson_lpmf(partial_data, lambda_);
-  }
-};
-
-TEST(parallel_reduce_sum, gradient) {
-  double lambda_d = 10.0;
-  const std::size_t elems = 10000;
-  const std::size_t num_iter = 1000;
-  std::vector<int> data(elems);
-  
-  for (std::size_t i = 0; i != elems; ++i)
-    data[i] = i;
-
-  typedef boost::counting_iterator<std::size_t> count_iter;
-  using stan::math::var;
-
-  var lambda = lambda_d;
-
-  count_lpdf<var> reduce_op(data, lambda);
-
-  var poisson_lpdf = stan::math::parallel_reduce_sum(
-      count_iter(0), count_iter(elems), var(0.0), reduce_op);
-
-  var lambda_ref = lambda_d;
-  var poisson_lpdf_ref = stan::math::poisson_lpmf(data, lambda_ref);
-
-  EXPECT_FLOAT_EQ(value_of(poisson_lpdf), value_of(poisson_lpdf_ref));
-
-  stan::math::grad(poisson_lpdf.vi_);
-  stan::math::grad(poisson_lpdf_ref.vi_);
-
-  EXPECT_FLOAT_EQ(poisson_lpdf.adj(), poisson_lpdf_ref.adj());
-}
-```
-
-The above example already runs on a prototype of this RFC. For this
-example of $10^4$ Poisson log-likelihood evaluations we go from about
-320ms on 1 core down to 170ms on 2 cores and 150ms on 3 cores. With 4
-cores execution time increases again. This was executed on a macOS
-system and shows greatly the potential of the approach, I think.
+Please refer to the appendix for an example code snippet for
+demonstration purposes.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -312,7 +247,10 @@ The overall strategy to implement all of this is based on
 
 Exposing these functionals to Stan is left as a topic to
 discuss. Either closures are used directly or the parser has to create
-lambda functors.
+lambda functors. Using small custom C++ user provided functions, the
+appendix includes a fully working example for the suggested
+constructs. The C++ user code are kept minimal and would need to be
+replaced by means of the new stanc3 parser.
 
 Reverse mode autodiff needs some refactoring to work with the task
 based approach of the TBB. However, we don’t need to deal with TBB
@@ -523,6 +461,273 @@ instance knows the previously active AD tape in a given thread. Upon
 deactivation the previously active AD tape is activated automatically
 again.
 
+Please refer to the appendix for a possible skeleton of code
+implementing the design 
+
+
+# Drawbacks
+[drawbacks]: #drawbacks
+
+Why should we *not* do this?
+
+- Life gets a bit more complicated with this and it’s a considerable
+  change under the hood of Stan. Although I think that we are doing a
+  change of terminology here for the good. Thus we generalize nested
+  AD towards independent AD and allow for permutations in the
+  topological sort of the autodiff tree whenever that is permissible.
+- We are going from one global ad tape to many small ones whenever
+  parallelism is used. The memory pool so far was grown only once and
+  then stayed static in size. With many small ad tapes we will merge
+  the independent ones into the originating one and when doing so only
+  the ownership of the memory blocks will be transferred, but at each
+  re-evaluation we will re-allocate the memory again. This can be
+  addressed by a more clever memory pool. My suggestion is to monitor
+  the performance penalty incurred by this. However, note that
+  programs not using parallelism will not have any changed behavior.
+- The new implementation for the old nested AD will be slower for
+  iterative things like ODE solving. The reason is that always using a
+  new independent AD tape requires to re-allocate it's needed memory
+  upon each iteration in the ODE integration process. However, if one
+  switches over to the more safe new pattern, then we retain the same
+  performance as we can then simply `recover()` the memory in the same
+  way as before which keeps the memory allocated, but ready for
+  reuse. Thus, the `coupled_ode_system` and the `algebraic_solver`
+  will need a light refactor to use the new scheme.
+- The suggested building blocks per se only parallelize the *forward*
+  sweep of reverse mode AD, but not the reverse sweep. Thus, the
+  operations which involved `adj_jac_apply`, for example, are not
+  speedup at all with this. However, this can be resolved by enhancing
+  the proposed functions as detailled in the appendix. In short,
+  greater control over the input operands is needed to correctly
+  synchronize the backward sweep. The AD tape does not need
+  further structural changes and this is a complimentary feature. 
+  
+# Rationale and alternatives
+[rationale-and-alternatives]: #rationale-and-alternatives
+
+- Why is this design the best in the space of possible designs? I
+  think the approach is incurring minimal changes to Stan in order to
+  make it work with the TBB. The key is to refactor nesting and
+  introduce `ScopedChainableStack` in order to allow for local execution
+  contexts. The guiding principle is to have independent AD tapes used
+  in local contexts. This fits nicely into the TBB, but the introduced
+  abstraction is useful regardless of the TBB.
+- What other designs have been considered and what is the rationale
+  for not choosing them?
+  An alternative approach is to allow the AD tape to grow in many
+  independent sub-trees. So after each parallel phase the chunks are
+  not merged together to form a single AD tape. These sub-trees are
+  then linked together in a tree-like structure which must allow for
+  traversal in reverse order as needed during the reverse sweep. The
+  upside of this approach is better speed as overhead incurred by
+  merging sub-trees into the master tree is avoided. This design has
+  been disregarded, because
+    * increased complexity, we would need to manage another level of a
+      tree structure.
+    * fundamental change to the AD tape data structure which may have
+      many side-effects (all global operations like
+      `set_zero_adjoint`, `recover_memory`, ... all need a rewrite)
+    * introducing trees of trees data structures can be left as a
+      later generalization. Such a generalization could deal at the
+      same time with many-device representations of a single AD tree
+      as would be ideal for GPU devices or even MPI backends.
+  
+# Prior art
+[prior-art]: #prior-art
+
+The Intel TBB is around for more than 10y now and has been used for
+many scientific applications. Grounding Stan on this makes a lot of
+sense as we get a lot of knowledge for free here.
+
+Other than that this is a big extension of nested ad as we introduce
+independent ad.
+
+In summary we make Stan fit for parallelism and plug it into the
+TBB. The key concept here is independent ad which is independent of
+the TBB.
+
+# Unresolved questions
+[unresolved-questions]: #unresolved-questions
+
+- What parts of the design do you expect to resolve through the RFC
+  process before this gets merged?
+  1. What will be the best strategy to slice it into individual PRs.
+  2. The proposed function signature for the parallel map and reduce
+  are very much in line with the standard c++ library, but maybe not
+  so with the Stan math notions...so using iterators is not done
+  usually, but I think it will give us more flexibility in the future
+  as to how we use these facilities (internally inside stan-math or
+  other c++ programs). By that I envision that the parallel map will
+  not only be used by Stan users, but can also be used inside the Stan
+  math library.
+  3. We could even consider to pass start and end iterators into the
+    BinaryFunction for the reduce function. The reason to do so is
+    that the iterators themselves represent the sub slices better than
+    the dereferenced ones. With the current design to use dereferenced
+    iterators we will end up using most of the time counting iterators
+    which are effecivley integers. The down-side of using iterators is
+    that these cannot be passed directly into Stan user functions as
+    we do not support iterators in the language.
+ - What parts of the design do you expect to resolve through the
+  implementation of this feature before stabilization? I have a
+  working prototype of all of this on an experimental branch
+  `parallel-ad-tape-3` which I actually like at the moment. The
+  prototype already shows the gains of these ideas. Things to settle
+  on:
+  1. Are we ok with merging all independent AD tapes to a single big
+    one by copying them together? This leaves an obvious point for
+    optimization as we could link the independent AD tapes with a
+    special var type. However, for a start the copying is fine, but it
+    does limit the scalability of the approach and we should resolve
+    this by a special var type allowing us to grow a linked list of
+    independent AD tapes.
+  2. We need to settle on what control we give users on the reduce. It
+  can be made deterministic and we could expose different queuing
+  strategies (simpler ones are better for small problems while more
+  complex work stealing is better with compute heavier jobs from my
+  first experience ).
+- What related issues do you consider out of scope for this RFC that
+  could be addressed in the future independently of the solution that
+  comes out of this RFC? 
+  1. Linked independent AD tapes as mentioned above in point 1. This
+     is better adressed in a second refactor which targets to
+     represent the AD tape on different devices (GPU, MPI).
+  2. A more clever memory pool accomodating that we end up having many
+     independent AD tapes. From benchmarks I have done this is not
+     really a bottleneck though.  
+
+# Appendix
+
+
+## Parallel Reverse Autodiff
+
+![reverse parallel](0003-parallel_reverse.jpeg)
+
+
+## Example `parallel_map`
+
+Here is a simple unit test which demonstrates the use of the
+`parallel_map`:
+
+```c++
+// we evaluate the following binary function over a large number of
+// inputs
+
+// fun1(x, y) = (x^2 * y) + (3 * y^2)
+struct fun1 {
+  template <typename T>
+  inline T operator()(const Matrix<T, Dynamic, 1>& x) const {
+    return x(0) * x(0) * x(1) + 3.0 * x(1) * x(1);
+  }
+};
+
+TEST(Base, parallel_map) {
+  const int num_jobs = 1000;
+  // Here we use simple integer indices for the iterators
+  typedef boost::counting_iterator<int> count_iter;
+
+  vector_d x_ref_2(num_jobs);
+
+  for (int i = 0; i < num_jobs; ++i) {
+    x_ref_2(i) = 7 + i;
+  }
+
+  // UnaryFunction which returns a Eigen column vector of length 1
+  auto loop_fun = [&](int i) -> vector_d {
+    fun1 f;
+    vector_d res(1);
+    vector_d iarg(2);
+    iarg << 5, x_ref_2(i);
+    res(0) = f(iarg);
+    return res;
+  };
+
+  // the concatenate_row takes the returned std::vector<vector_d>
+  // and appends them horizontally together
+  vector_d parallel_result = stan::math::concatenate_row(
+      stan::math::parallel_map(count_iter(0), count_iter(num_jobs), loop_fun));
+
+  for (int i = 0; i < num_jobs; ++i) {
+    vector_d x_ref(2);
+    x_ref << 5, x_ref_2(i);
+    double fx_ref = parallel_result(i);
+    EXPECT_FLOAT_EQ(x_ref(0) * x_ref(0) * x_ref(1) + 3 * x_ref(1) * x_ref(1),
+                    fx_ref);
+  }
+
+  stan::math::recover_memory();
+}
+```
+
+## Example `parallel_reduce`
+
+In c++ code using the `parallel_reduce_sum` may look as:
+
+```c++
+// reduce functor which is the BinaryFunction
+// here we use iterators which represent integer indices
+template <typename T>
+struct count_lpdf {
+  const std::vector<int>& data_;
+  const T& lambda_;
+
+  count_lpdf(const std::vector<int>& data, const T& lambda)
+      : data_(data), lambda_(lambda) {}
+
+  // does the reduction in the sub-slice start to end
+  inline T operator()(std::size_t start, std::size_t end) const {
+    const std::size_t elems = end - start + 1;
+    std::vector<int> partial_data;
+    partial_data.insert(partial_data.end(), data_.begin() + start,
+                        data_.begin() + end + 1);
+    return stan::math::poisson_lpmf(partial_data, lambda_);
+  }
+};
+
+TEST(parallel_reduce_sum, gradient) {
+  double lambda_d = 10.0;
+  const std::size_t elems = 10000;
+  const std::size_t num_iter = 1000;
+  std::vector<int> data(elems);
+  
+  for (std::size_t i = 0; i != elems; ++i)
+    data[i] = i;
+
+  typedef boost::counting_iterator<std::size_t> count_iter;
+  using stan::math::var;
+
+  var lambda = lambda_d;
+
+  count_lpdf<var> reduce_op(data, lambda);
+
+  var poisson_lpdf = stan::math::parallel_reduce_sum(
+      count_iter(0), count_iter(elems), var(0.0), reduce_op);
+
+  var lambda_ref = lambda_d;
+  var poisson_lpdf_ref = stan::math::poisson_lpmf(data, lambda_ref);
+
+  EXPECT_FLOAT_EQ(value_of(poisson_lpdf), value_of(poisson_lpdf_ref));
+
+  stan::math::grad(poisson_lpdf.vi_);
+  stan::math::grad(poisson_lpdf_ref.vi_);
+
+  EXPECT_FLOAT_EQ(poisson_lpdf.adj(), poisson_lpdf_ref.adj());
+}
+```
+
+
+## Example Stan Program
+
+Full Stan program which simulates and fits fake data for a
+hierarchical Poisson problem. In benchmarks this program demonstrated
+5x speed incerases when using 6 cores on a MacBook Pro.
+
+- [Stan model](0003-poisson-hierarchical.stan)
+- [Stan data](0003-hbench_method0.data.R)
+- [C++ user functions](0003-user_header.hpp)
+
+## Refactored Nested AD Skeleton
+
 The declaration of the `AutodiffStackStorage` could look like:
 
 ```c++
@@ -589,159 +794,4 @@ static inline bool empty_nested() {
 However, for the design issue raised above (things are only safe with
 `try-catch`) we should deprecate the use of these functions and
 instead advocate the pattern with an independent AD tape.
-
-# Drawbacks
-[drawbacks]: #drawbacks
-
-Why should we *not* do this?
-
-- Life gets a bit more complicated with this and it’s a considerable
-  change under the hood of Stan. Although I think that we are doing
-  change of terminology here for the good. Thus we generalize nested
-  AD towards independent AD and allow for permutations in the
-  topological sort of the autodiff tree whenever that is permissible.
-- We are going from one global ad tape to many small ones whenever
-  parallelism is used. The memory pool so far was grown only once and
-  then stayed static in size. With many small ad tapes we will merge
-  the independent ones into the originating one and when doing so only
-  the ownership of the memory blocks will be transferred, but at each
-  re-evaluation we will re-allocate the memory again. This can be
-  addressed by a more clever memory pool. My suggestion is to monitor
-  the performance penalty incurred by this. However, note that
-  programs not using parallelism will not have any changed behavior.
-- The new implementation for the old nested AD will be slower for
-  iterative things like ODE solving. The reason is that always using a
-  new independent AD tape requires to re-allocate it's needed memory
-  upon each iteration in the ODE integration process. However, if one
-  switches over to the more safe new pattern, then we retain the same
-  performance as we can then simply `recover()` the memory in the same
-  way as before which keeps the memory allocated, but ready for
-  reuse. Thus, the `coupled_ode_system` and the `algebraic_solver`
-  will need a light refactor to use the new scheme.
-- The suggested building blocks per se only parallelize the *forward*
-  sweep of reverse mode AD, but not the reverse sweep. Thus, the
-  operations which involved `adj_jac_apply`, for example, are not
-  speedup at all with this. However, this can easily be resolved by
-  introducing a general AD tree compression facility which works just
-  as `map_rect` does. Such a facility needs to know all the operands
-  and can then do nested AD and perform on the spot gradient
-  evaluation of the function of interest and store results as
-  `operands_and_partials`. From `map_rect` we have seen that this can
-  result in considerable speedups due to better use of CPU caches and
-  in addition, this approach will allow parallelize the forward and
-  the reverse sweep. However, such a facility can be written
-  independently of the RFC and can be used in combination with this
-  RFC. Doing so will be beneficial for a few reasons: The independent
-  AD tapes get compressed and we speedup things through keeping CPU
-  caches hot as only smaller AD tapes get generated and sweep-ed over.
-- We add the Intel TBB as a dependency if we go with this
-  approach. However, we could as a start try to limit its use to the
-  `parallel_map` and `parallel_reduce_sum` functions... but I would
-  actually opt against that and just use it like boost anywhere in
-  stan where it helps (for example, its malloc implementation speeds
-  up non-stiff ode integration on Mac by 25%).
-- The Intel TBB is developed by *Intel*, of course, and is only unit
-  tested on Intel hardware. However, it is still an open-source c++
-  library which will run fast on AMD as well. Moreover, the Intel TBB
-  forms the foundation for the parallel C++17 extensions for the clang
-  and gcc compilers.
-
-# Rationale and alternatives
-[rationale-and-alternatives]: #rationale-and-alternatives
-
-- Why is this design the best in the space of possible designs? I
-  think the approach is incurring minimal changes to Stan in order to
-  make it work with the TBB. The key is to refactor nesting and
-  introduce `ScopedChainableStack` in order to allow for local execution
-  contexts. The guiding principle is to have independent AD tapes used
-  in local contexts. This fits nicely into the TBB, but the introduced
-  abstraction is useful regardless of the TBB.
-- What other designs have been considered and what is the rationale
-  for not choosing them? 
-  
-  ### OpenMP
-  OpenMP is a compiler extension which allows to introduce parallelism and its use is portable across Win/Linux/OsX. It requires specific compiler support (a compiler that understands OpenMP pragmas). Recent C++ compilers tend to have this support but it is not supported by the native macOS compiler. OpenMP excels in parallezing straightforward bounded loops on built-in types and large predictable data parallel problems. If the iteration space is custom or the reduction operation is more complex OpenMP is less or even not suitable. OpenMP provides very limited options for controlling the execution flow. 
-  
-  A comprehensive comparison of the capabilites of Intel TBB vs OpenMP is given [here](https://software.intel.com/en-us/intel-threading-building-blocks-openmp-or-native-threads) with a disclaimer that this comparison was made by an employee of Intel. Tousimojarad et. al [link](https://www.semanticscholar.org/paper/Comparison-of-Three-Popular-Parallel-Programming-on-Tousimojarad-Vanderbauwhede/deff757dcef1fb827b58351d393d1efe22e4bdf8) provide a performance study of TBB vs OpenMP on Xeon Phi. Intel also provides a performance comparison ([link](https://software.intel.com/en-us/articles/using-intel-mkl-and-intel-tbb-in-the-same-application)) when TBB and OpenMP is used with Intel MKL. This is significant due to Eigen's use of Intel MKL. The use of TBB does not exclude OpenMP as the two coexist in the same application.
-
-  ### C++17 parallelism
-  
-  C++17 parallelism does not have compiler support yet and it will probably still take some time. Clang and gcc implementation will use TBB as their foundation. Compared to TBB, C++17 provide much less advanced features. TBB and C++17 can coexist in theory but such codebase would be confusing.
-
-  ### SYCL
-
-  SYCL is an open standard that provides a programming model to facilitate parallel heterogeneous architectures (CPUs, GPU and other accelerators) in C++. It aims to provide similar features to TBB with the addition of supporting GPUs and other accelerators but it is still in very early stages and has limited support with compilers.
-
-- What is the impact of not doing this? Stan will be slow for medium
-  to large problems. Most importantly, Stan cannot be scaled to larger
-  problems which cannot be put on the gpu. Also, Users won’t get to
-  use cpu parallelism because it is too hard to use it right now.
-
-# Prior art
-[prior-art]: #prior-art
-
-The Intel TBB is around for more than 10y now and has been used for
-many scientific applications. Grounding Stan on this makes a lot of
-sense as we get a lot of knowledge for free here.
-
-Other than that this is a big extension of nested ad as we introduce
-independent ad.
-
-In summary we make Stan fit for parallelism and plug it into the
-TBB. The key concept here is independent ad which is independent of
-the TBB.
-
-# Unresolved questions
-[unresolved-questions]: #unresolved-questions
-
-- What parts of the design do you expect to resolve through the RFC
-  process before this gets merged?
-  1. What will be the best strategy to slice it into individual PRs.
-  2. The proposed function signature for the parallel map and reduce
-  are very much in line with the standard c++ library, but maybe not
-  so with the Stan math notions...so using iterators is not done
-  usually, but I think it will give us more flexibility in the future
-  as to how we use these facilities (internally inside stan-math or
-  other c++ programs). By that I envision that the parallel map will
-  not only be used by Stan users, but can also be used inside the Stan
-  math library.
-  3. We could even consider to pass start and end iterators into the
-    BinaryFunction for the reduce function. The reason to do so is
-    that the iterators themselves represent the sub slices better than
-    the dereferenced ones. With the current design to use dereferenced
-    iterators we will end up using most of the time counting iterators
-    which are effecivley integers. The down-side of using iterators is
-    that these cannot be passed directly into Stan user functions as
-    we do not support iterators in the language.
-- What parts of the design do you expect to resolve through the
-  implementation of this feature before stabilization? I have a
-  working prototype of all of this on an experimental branch
-  `parallel-ad-tape-3` which I actually like at the moment. The
-  prototype already shows the gains of these ideas. Things to settle
-  on:
-  1. Are we ok with merging all independent AD tapes to a single big
-    one by copying them together? This leaves an obvious point for
-    optimization as we could link the independent AD tapes with a
-    special var type. However, for a start the copying is fine, but it
-    does limit the scalability of the approach and we should resolve
-    this by a special var type allowing us to grow a linked list of
-    independent AD tapes.
-  2. We need to settle on what control we give users on the reduce. It
-  can be made deterministic and we could expose different queuing
-  strategies (simpler ones are better for small problems while more
-  complex work stealing is better with compute heavier jobs from my
-  first experience ).
-- What related issues do you consider out of scope for this RFC that
-  could be addressed in the future independently of the solution that
-  comes out of this RFC? 
-  1. Linked independent AD tapes as mentioned above in point 1.
-  2. A more clever memory pool accomodating that we end up having many
-     independent AD tapes.
-  3. Settling on session management which we need when going towards
-     using the TBB with thread arenas. Right now `STAN_NUM_THREADS`
-     sets the number of threads to use within a chain, but it will
-     make sense to run all chains as part of a thread arena such that
-     earlier finishing chains can give their freed ressources to still
-     running chains.
-  
 
