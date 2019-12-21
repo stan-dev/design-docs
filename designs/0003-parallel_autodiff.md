@@ -21,9 +21,8 @@ restrictions:
 
 1. Very user unfriendly due to the requirement to pack and unpack data
    and parameters passed into the function.
-2. The user must provide a sensible sharding block size. No work load
-   balancing is done during execution.
-3. Vectorization must be traded for parallelism in most applications.
+2. The user must provide a sensible sharding block size.
+3. Vectorization must be traded for parallelism in most applications (users have to pack work into shards).
 
 In short, we currently make it very hard for users to use parallelism
 and moreover the current facility cannot speed up problems where we
@@ -46,7 +45,7 @@ allocated to a Stan chain can be scaled as needed (nowadays one can
 get up to 96core machines on clusters or the cloud like AWS).
 
 Clearly large Stan runs which take multiple hours will benefit from
-the proposed parallelism, but very likely even smaller problems can be
+the proposed parallelism, but even smaller problems can be
 speed up whenever sufficient CPU cores are available.
 
 Use cases where this RFC will add value by speeding up execution are:
@@ -78,8 +77,51 @@ The function signatures follow C++ standard library conventions. The
 It are iterators which are assumed to allow for random access, the
 function objects are passed by value and these are expected to have
 signature as explained below. How these functions are exposed in the
-Stan language is left unspecified for the moment. Certainly closures
-would be very helpful for this, but this would not be a requirement.
+Stan language will depend on the forthcoming features closures and lambdas. As these are not yet available, the functionality could be exposed in Stan with custom c++ user defined functions like this
+
+ˋˋˋstan
+functions {
+  // runs reduce over the index range start to end. Mapping from
+  // data-index set to group indices pre-stored in gidx
+  real hierarchical_reduce(int start, int end, int[] y, vector log_lambda_group, int[] gidx) {
+    return poisson_log_lpmf(y[start:end]| log_lambda_group[gidx[start:end]]);   
+  }
+
+  // user function defined in C++ which calls parallel_reduce_sum with a
+  // lambda functor which simply binds the arguments passed into it
+  real parallel_hierarchical_reduce(int[] y, vector log_lambda_group, int[] gidx, int grainsize);
+  
+  real hierarchical_map(int g, vector log_lambda, int[,] yg) {
+    real lp = poisson_log_lpmf(yg[g]| log_lambda[g]);
+    return lp;
+  }
+  
+  // user function defined in c++ based on parallel_map
+  real[] parallel_hierarchical_map(int[] group, vector log_lambda, int[,] yg);
+}
+ˋˋ
+
+The respective user defined C++ functions merely generate small lambda functors calling the stan user functions and pass these to the C++ signatures from above. The complete source of the above example is given in the appendix.
+
+The proposed C++ parallel reduce and map are formulated with general c++ signatures as they are expected to be useful as utility functions of their own in order to use them as building blocks to create super nodes which themselves execute code in parallel.
+
+## Parallel Automatic Differentiation Requirements
+
+The proposed functions allow for out of order execution of computationally independent tasks in different processes (threads). For the reverse mode autodiff tape a per process/thread global ad tape is created in order to track all operations needed to calculate the gradient of the target function. The calculations occur in two stages. During the first forward sweep the global ad tape is created and the resulting tape represents a topological sort of the operations making up the target function. In the second stage, the partial derivatives are propagated along the ad tape to calculate the final gradient of the target quantity wrt to operands of interest. The aim of this RFC is to enable parallelism during the *forward sweep* when the ad tape is created.
+
+Pre-requisites:
+- all calculations during parallel reduce or map must be independent from one another
+- each calculation must only depend on operands created prior to entering the parallel reduce or map (and these must not be altered)
+
+Requirements for parallel reverse mode autodiff during forward sweep ad tape creation:
+- independent chunks of work can be reordered (no more unique topological sort of operations)
+- possibility to create parts of the ad tape in different processes
+- actual chunking of independent tasks should be variable (to allow the Intel TBB to control it)
+
+Post-conditions:
+- the reverse mode sweeps will produce the same partials, but numerical difference attributed to floating point arithmetic reorderings are admissible
+- after parallel execution of independent chunks, the independent chunks shall be stitched together to form again a single large tape *or* a tree like structure stores the information as to which parts of the independent chunks belong together.
+
 
 ## Parallel Map
 
@@ -250,7 +292,7 @@ system and shows greatly the potential of the approach, I think.
 
 The overall strategy to implement all of this is based on
 
-- Introduce the Intel TBB which provides a work stealing queuing
+- DONE: Introduce the Intel TBB which provides a work stealing queuing
   system and many building blocks for parallelism in general. The TBB
   has been designed to add parallelism to existing projects using a
   task based and data parallel approach. See [the TBB dependency
