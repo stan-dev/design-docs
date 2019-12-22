@@ -601,7 +601,7 @@ the TBB.
 
 ## Parallel Reverse Autodiff
 
-![reverse parallel](0003-parallel_reverse.jpeg)
+![reverse parallel](0003-parallel_backward.jpeg)
 
 
 ## Example `parallel_map`
