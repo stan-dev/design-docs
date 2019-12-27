@@ -1,5 +1,5 @@
-- Feature Name: parallel_ad
-- Start Date: 2019-04-20
+- Feature Name: parallel_ad_v2
+- Start Date: 2019-12-27
 - RFC PR: (leave this empty)
 - Stan Issue: (leave this empty)
 
