@@ -80,7 +80,7 @@ Stan language will depend on the forthcoming features closures and
 lambdas. As these are not yet available, the functionality could be
 exposed in Stan with custom c++ user defined functions like this
 
-ˋˋˋstan
+```stan
 functions {
   // runs reduce over the index range start to end. Mapping from
   // data-index set to group indices pre-stored in gidx
@@ -100,7 +100,7 @@ functions {
   // user function defined in c++ based on parallel_map
   real[] parallel_hierarchical_map(int[] group, vector log_lambda, int[,] yg);
 }
-ˋˋ
+```
 
 The respective user defined C++ functions merely generate small lambda
 functors calling the stan user functions and pass these to the C++
@@ -118,14 +118,21 @@ The proposed functions allow for out of order execution of
 computationally independent tasks in different processes
 (threads). For the reverse mode autodiff tape a per process/thread
 global ad tape is created in order to track all operations needed to
-calculate the gradient of the target function. The calculations occur
-in two stages. During the first forward sweep the global ad tape is
-created and the resulting tape represents a topological sort of the
-operations making up the target function. In the second stage, the
-partial derivatives are propagated along the ad tape to calculate the
-final gradient of the target quantity wrt to operands of interest. The
-aim of this RFC is to enable parallelism during the *forward sweep*
-when the ad tape is created.
+calculate the gradient of the target function. The key assumption so
+far has been that the target function is evaluated within a single
+process or a single thread only. The intent of this RFC is to enable
+an evaluation of the target function using multiple threads
+concurrently whenever the respecitve parallel functions proposed in
+this RFC are called.
+
+The reverse mode autodiff calculations occur in two stages. During the
+first forward sweep the global ad tape is created and the resulting
+tape represents a topological sort of the operations making up the
+target function. In the second stage, the partial derivatives are
+propagated along the ad tape to calculate the final gradient of the
+target quantity wrt to operands of interest. The aim of this RFC is to
+enable parallelism during the *forward sweep* when the ad tape is
+created.
 
 Pre-requisites:
 - all calculations during parallel reduce or map must be independent
@@ -135,23 +142,24 @@ Pre-requisites:
 
 Requirements for parallel reverse mode autodiff during forward sweep
 ad tape creation:
-- independent chunks of work can be reordered (no more unique
-  topological sort of operations)
+- possibility to dispatch work to the Intel TBB task scheduler. This
+  requires that independent chunks of work can be reordered (no more
+  unique topological sort of operations).
 - possibility to create parts of the ad tape in different processes
 - actual chunking of independent tasks should be variable (to allow
-  the Intel TBB to control it)
+  the Intel TBB to control work chunk size according to CPU load)
 
 Post-conditions:
 - the reverse mode sweeps will produce the same partials, but
   numerical difference attributed to floating point arithmetic
   reorderings are admissible
 - after parallel execution of independent chunks, the independent
-  chunks shall be stitched together to form again a single large tape
-  and alternative approach is to avoid the stitching and instead grow
-  a tree like structure which stores the information as to what parts
-  of the independent chunks belong together. For the reasons given in
-  the rationale and alternatives section, the suggestion here is to go
-  for now with the merging approach.
+  chunks shall be merged together to form again a single large tape.
+  An alternative approach is to avoid the stitching and instead grow a
+  tree like structure which stores the information as to which
+  independent chunks belong together in what order. For the reasons
+  given in the rationale and alternatives section, the suggestion here
+  is to go for now with the merging approach.
 
 
 A graphical representation of the parallel forward sweep is shown
@@ -169,9 +177,9 @@ functions which forward the shared arguments to the user functor.
 
 ## Parallel Map
 
-A dereferenced iterator from the InputIt sequence is passed into the
-UnaryFunction function object. The function is expected to return the
-same type of object for all evaluations in the sequence (except void
+The `UnaryFunction` function object recieves dereferenced iterators
+fromt the `InputIt` sequence. The function is expected to return the
+same type of object for all evaluations in the sequence (only void
 would not be allowed).
 
 The parallel map facility is very similar to the existing `map_rect`
@@ -188,25 +196,24 @@ In practice, the parallel map will map the input iterator sequence
 onto an index set which defines the output std vector. Doing so makes
 every function evaluation per element of the input sequence fully
 *independent* of any other evaluation. Note that the function only
-requires that each element out is of the same c++ type, but it's
-actual shape is allowed to vary between elements. A direct export of
-the function to the Stan language may thus need additional
+requires that each element is of the same c++ type, but it's actual
+shape is allowed to vary between elements (so returned Eigen matrices
+would be allowed to have different sizes from element to element). A
+direct export of the function to the Stan language may need additional
 considerations.
-
-
 
 ## Parallel Reduce
 
-Dereferenced start and end iterators of a sub slice of the complete
-input sequence are passed into the BinaryFunction function object.
-The end iterator will refer to the last element of the to be reduced
-sub slice of the input sequence (so it includes the last element). The
-function is expected to reduce the sub slice and to return an element
-of the same type as the initial provided to the reduce facility. The
-individual elements returned from multiple sub slices will be summed
-together. Therefore, summation of two returned elements must result in
-the same scalar type and the summation must be associative as the
-summation order is not necessarily guaranteed.
+The `BinaryFunction` function object is called with dereferenced start
+and end iterators which represent a continuous sub slice of the input
+sequence. The end iterator will refer to the last element of the to
+be reduced sub slice of the input sequence (so it includes the last
+element). The function is expected to reduce the sub slice and to
+return an element of the same type as the initial provided to the
+reduce facility. The individual elements returned from multiple sub
+slices will be summed together. Therefore, summation of two returned
+elements must result in the same scalar type and the summation must be
+associative as the summation order is not necessarily guaranteed.
 
 Note that the actual slicing of the input data is not performed by the
 reduce function itself. Instead, the actual sub slicing is left to the
@@ -217,7 +224,7 @@ counting iterators. Doing so will make the binary function receive
 starting and end indexes (given as integers) which represent the sub
 slice of data to do the actual reduction over. The actual data
 involved then must be part of the closure of the function object
-BinaryFunction passed into the facility.
+`BinaryFunction` passed into the facility.
 
 Please refer to the appendix for an example code snippet for
 demonstration purposes.
@@ -227,27 +234,20 @@ demonstration purposes.
 
 The overall strategy to implement all of this is based on
 
-- DONE: Introduce the Intel TBB which provides a work stealing queuing
-  system and many building blocks for parallelism in general. The TBB
-  has been designed to add parallelism to existing projects using a
-  task based and data parallel approach. See [the TBB dependency
-  checklist](https://github.com/stan-dev/math/wiki/Dependency-Checklist-for-the-Intel-TBB)
-  for more details.
 - Refactor the reverse mode autodiff to work with the task based
-  approach of the TBB. In essence this will mean to allow for
+  approach of the Intel TBB. In essence this will mean to allow for
   independent evaluations of functions where each independent
   evaluation can be written to different ad tapes which are combined
   together. This is essentially a type of nested autodiff (but it’s
   more general and different).
-- Expose the parallel_for (as a map type function) of the TBB with
-  using closures. This is essentially a `map_rect` with automatic
-  sharding.
-- Expose parallel_reduce of the TBB with using closures. This will
-  bring automatic sharding and combine this with vectorization.
+- Expose the `parallel_for` (as a map type function) of the TBB. This
+  is essentially a `map_rect` with automatic sharding.
+- Expose `parallel_reduce` of the TBB. This will bring automatic
+  sharding and combine this with vectorization.
 
 Exposing these functionals to Stan is left as a topic to
 discuss. Either closures are used directly or the parser has to create
-lambda functors. Using small custom C++ user provided functions, the
+C++ lambda functors. Using simple C++ user provided functions, the
 appendix includes a fully working example for the suggested
 constructs. The C++ user code are kept minimal and would need to be
 replaced by means of the new stanc3 parser.
@@ -258,8 +258,8 @@ tasks ourselves atm, since we can just use parallel map and parallel
 reduce. These TBB algorithms chunk the work to be done into
 inter-dependent tasks (these algorithms are examples of so-called data
 parallel programming in TBB jargon). How these are executed is nothing
-we can control. Internally the Intel TBB uses a thread pool to do the
-work, but that may actually change.
+we can control in great detail. Internally the Intel TBB uses a thread
+pool to do the work, but that may actually change.
 
 In the following I will in step 1 explain what it needs to make
 stan-math's reverse mode AD compatible with the Intel TBB (actually we
@@ -419,7 +419,7 @@ Right now we usually do nested ad as
 
 So, we always have to deal with catching exceptions to deal with
 cleanup of the ressources for the nested context. This is not ideal as
-the ressource management should be deferred to c++ language
+the ressource management should be deferred to C++ language
 features. **My recommendation is therefore to deprecate the existing
 nested AD** and replace it with a pattern which is based on independent
 AD using the `ScopedChainableStack` as introduced. The proposed
