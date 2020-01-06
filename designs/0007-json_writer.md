@@ -6,18 +6,18 @@
 # Summary
 [summary]: #summary
 
-I would like to propose adding JSON as an output option for Cmdstan, complementing the existing CSV output. This started as an [issue on Cmdstan](https://github.com/stan-dev/cmdstan/issues/789) but as this topic requires a more general agreement and approval the issue is now elevated to a design doc.
+I want to propose adding JSON as an output option for Cmdstan, complementing the existing CSV output. This started as an [issue on Cmdstan](https://github.com/stan-dev/cmdstan/issues/789), but as this topic requires a more general agreement and approval, the issue is now elevated to a design doc.
 
 # Motivation
 [motivation]: #motivation
 There are a couple of reasons for doing this: 
 - simplifies the Cmdstan-CmdstanPy and Cmdstan-CmdstanR communication
-- simplifies handling of sampling results and sampling arguments (metadata) in other programming languages
+- simplifies handling of samples, sampler parameters and arguments (metadata) in other programming languages
 - simplifies solving other cmdstan feature requests, some are mentioned by @maedoc in [this issue](https://github.com/stan-dev/cmdstan/issues/511#issuecomment-565356551): 
-	- restarts of Cmdstan models (for when a model takes longer than a given time limit on a cluster),
-	- simulating data and then fitting a model to its data
-	- multiple model workflow
-	- intializing HMC from an optimization
+ - restarts of Cmdstan models (for when a model takes longer than a given time limit on a cluster),
+ - simulating data and then fitting a model to its data
+ - multiple model workflow
+ - initializing HMC from an optimization
 - preliminary results show that JSON output is also slightly faster in some cases (see below)
 
 # Guide-level explanation
@@ -27,29 +27,30 @@ The main change would be that instead of only allowing csv output for Cmdstan ([
 ```JSON
 {
 "meta": {
-    "stan_version_major": 2,
-    "stan_version_minor": 21,
-    "stan_version_patch": 0,
-    "model": "eight_schools_model",
-    "method": "sample",
-    "sample": {
-        "num_samples": 10,
-        "num_warmup": 1000,
-        "save_warmup": 0,
-        "thin": 1,
-        "adapt":{
-            "engaged": 1,
-            "gamma": 0.050000000000000003,
-            "delta": 0.80000000000000004,
-            "kappa": 0.75,
-            "t0": 10,
-            "init_buffer": 75,
-            "term_buffer": 50,
-            "window": 25
-        }
-    }
-    // skipping the rest    
+ "stan_version_major": 2,
+ "stan_version_minor": 21,
+ "stan_version_patch": 0,
+ "model": "eight_schools_model",
+ "method": "sample",
+ "sample": {
+ "num_samples": 10,
+ "num_warmup": 1000,
+ "save_warmup": 0,
+ "thin": 1,
+ "adapt":{
+ "engaged": 1,
+ "gamma": 0.050000000000000003,
+ "delta": 0.80000000000000004,
+ "kappa": 0.75,
+ "t0": 10,
+ "init_buffer": 75,
+ "term_buffer": 50,
+ "window": 25
+ }
+ }
+ // skipping the rest 
 },
+"param_names": ["lp__","accept_stat__","stepsize__","treedepth__","n_leapfrog__","divergent__","energy__","mu","tau","theta.1","theta.2","theta.3","theta.4","theta.5","theta.6","theta.7","theta.8","theta.9","theta.10","theta.11","theta.12","theta.13","theta.14","theta.15","theta.16","theta.17","theta.18","theta.19","theta.20"],
 "step_size": 0.372621,
 "inverse_mass_matrix_diag": [18.2285, 1.21924, 0.780185, 0.875131, 0.921772, 0.878005, 0.770609, 0.827646, 0.731635, 0.713899, 0.900615, 0.754151],
 // "inverse_mass_matrix" would be used if dense_e is used
@@ -57,9 +58,9 @@ The main change would be that instead of only allowing csv output for Cmdstan ([
 }
 ```
 
-The main issue with JSON is that the standard does not define how to encode NaN and infinite numbers. Which means that `'{"val": [Infinity, -Infinity, NaN]}'` is not considered to be valid JSON according to the strict standard. There are however multiple popular solution on how to encode these values. 
+The main issue with JSON is that the standard does not define how to encode NaN and infinite values. This means that `'{"val": [Infinity, -Infinity, NaN]}'` is not considered to be valid JSON according to the strict standard. There are, however, multiple popular solutions on how to encode these values. 
 
-Python's default `json` library acccepts the Javascript notation for these special values: Infinty, -Infinity, Nan. Example:
+Python's default `json` library acccepts the Javascript notation for these special values (Infinty, -Infinity and Nan). Example:
 ```python
 >>> import json
 >>> x = '{"val": [Infinity, -Infinity, NaN]}'
@@ -68,36 +69,36 @@ Python's default `json` library acccepts the Javascript notation for these speci
 [inf, -inf, nan]
 ```
 
-Python's fastest library `ujson` does not accept these special values. Pandas went ahead and modified `ujson` for the user in their project, as this was something commonly requested by their users. See https://github.com/pandas-dev/pandas/pull/30295.
+Python's fastest library, `ujson` does not accept these special values. Pandas went ahead and modified `ujson` for the use in their project, as this was something commonly requested by their users. See https://github.com/pandas-dev/pandas/pull/30295.
 
-`jsonlite`, the most popular and fastest JSON parser for R supports these values if they are encoded as strings. Example:
+`jsonlite`, the most popular and fastest JSON parser for R, supports these values if they are encoded as strings. Example:
 ```R
 > jsonlite::fromJSON('[1, "Inf", "-Inf", "NaN"]')
-[1]    1  Inf -Inf  NaN
+[1] 1 Inf -Inf NaN
 ```
 
-`rjson` support outputing these values as strings, but does not support reading them.
+`rjson` but only supports the standard JSON.
 
-`rapidjson` library for C++, which Cmdstan uses for reading JSON input, support parsing the following values: NaN, Inf, Infinity, -Inf and -Infinity. For output it uses the short names by default, but can be easily extended to output strings or Javascript notation.
+`rapidjson` library for C++ used in Cmdstan for JSON input, supports parsing the following values: NaN, Inf, Infinity, -Inf and -Infinity. For output, it uses the short names by default but can be easily extended to output strings or Javascript notation.
 
-In order to make JSON output as general as possible we should therefore support at least two ways of handling these special values:
+To make JSON output as general as possible, we should, therefore, support at least two ways of handling special values:
 - Javascript notation (Infinity, -Infinity, NaN) which makes it compliant with Python's packages and rapidjson
 - string notation which makes it compliant with R's jsonlite package
 
-We can discuss if we should also support a "NA" notation. That would mean that we would output NA (or null) instead of NaN and Inf to produce a standard-compliant JSON. `[NA, null, 1]` is considered valid JSON. I have reached out to the authors of `jsonlite` if they would be willing to support the Javascript notation. If we get a positive answer we could just go with the Javascript notation of special values.
+We can discuss if we should also support a "NA" notation. That would mean that we would output NA (or null) instead of NaN and Inf to produce a standard-compliant JSON. `[NA, null, 1]` is considered valid JSON. I have reached out to the authors of `jsonlite` if they would be willing to support the Javascript notation. If we get a positive answer, we could go with only the Javascript notation of special values.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-In order to implement the proposed JSON writer we need to:
+In order to implement the proposed JSON writer, we need to:
 
 1. Add arguments to specify that the user wants JSON output and what type of notation to use for special values. My proposal is:
 ```
 output
-  file
-  diagnostic_file
-  format=csv or format=json
-  special_values_encoding=js or special_values_encoding=string or special_values_encoding=na
+ file
+ diagnostic_file
+ format=csv or format=json
+ special_values_encoding=js or special_values_encoding=string or special_values_encoding=na
 ```
 2. Move the RapidJSON library to the Stan repository
 
@@ -105,32 +106,34 @@ output
 
 I have a prototype implementation that only writes out the samples, without the metadata. I used the eight_schools model producing 5000 samples. Below is a table of execution times of the entire model for varying J. The results are promising, though I do need to look at why the execution time for larger number of parameters slows the JSON output.
 
-|     J    |   10  |   20   | 50     | 100    | 200    | 500    | 1000    | 2000    | 4000    |
+| J | 10 | 20 | 50 | 100 | 200 | 500 | 1000 | 2000 | 4000 |
 |:--------:|:-----:|:------:|--------|--------|--------|--------|---------|---------|---------|
-|    CSV   | 0.250 | 0.3668 | 0.7097 | 1.2274 | 2.2794 | 5.8308 | 11.1985 | 21.552  | 52.1741 |
-|   JSON   | 0.223 | 0.3148 | 0.5583 | 0.9779 | 1.8181 | 4.4489 | 9.7813  | 21.9904 | 55.7278 |
-| JSON/CSV | 0.891 | 0.858  | 0.787  | 0.797  | 0.798  | 0.763  | 0.873   | 1.020   | 1.068   |
+| CSV | 0.250 | 0.3668 | 0.7097 | 1.2274 | 2.2794 | 5.8308 | 11.1985 | 21.552 | 52.1741 |
+| JSON | 0.223 | 0.3148 | 0.5583 | 0.9779 | 1.8181 | 4.4489 | 9.7813 | 21.9904 | 55.7278 |
+| JSON/CSV | 0.891 | 0.858 | 0.787 | 0.797 | 0.798 | 0.763 | 0.873 | 1.020 | 1.068 |
 
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
-The main drawback of going with a JSON output format is dealing with `Inf` and `NaN` value as explained above. Given that it will be an optional output format, I do not see any real drawbacks, except for additional code to maintain in the codebase.
+The main drawback of going with a JSON output format is dealing with `Inf` and `NaN` value, as explained above. Given that it will be an optional output format, I do not see any real drawbacks, except for additional code to maintain in the codebase.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-There are many alternatives to adding a JSON format. Here is short rundown of the most popular ones: 
+There are many alternatives to adding a JSON format. Here is a short rundown of the most popular ones: 
 
-- Rdump: the main drawback here is that its not as general of a format, only focusing on R
+- Rdump: the main drawback here is that it is not as general of a format, only focusing on R
 - [YAML](https://en.wikipedia.org/wiki/YAML): similar language support to JSON (YAML is a superset of JSON), arguably more human-readable but the available parse and write libraries for YAML are currently not as fast as for JSON. 
-- XML: less readable, very unefficient for exporting arrays
+- XML: less readable, very inefficient for exporting arrays
 - any binary format (protobuf, thrift, avro, hdf5, ...): not human-readable but obviously faster. I think this is the next or complementary step to this initiative.
 
-The only realistic alternative I see is skipping the step of introducing a JSON output and going with a binary output. But that will not enable some requested features like restarting.
+The only realistic alternative I see is skipping the step of introducing a JSON output and going with binary output. But that will not enable some requested features like restarting.
+
+The other alternative is in terms of the JSON writer library. We could use the boost JSON writer as we already ship boost with Cmdstan. I don't think adding a third library just for writing is necessary.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- Argument naming. The arguments I am proposing here are far from final, I am usually bad with names.
-- Which formats to support for Inf and NaN? Which one should be default?
+- Argument names. These are weak proposals I am not attached to in any way.
+- Which notations for special values to support?
