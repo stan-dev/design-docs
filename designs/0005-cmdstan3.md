@@ -9,10 +9,13 @@ output:
 CmdStan3 is a command-line interface to the Stan services layer
 which provides an extensible syntax for calling Stan services
 as well as model compilation.
-CmdStan3 provide a utility program `stan` which takes as arguments
+CmdStan3 provides a utility program `stan` which takes as arguments
 a set of subcommands; these subcommands map to functions
 exposed by the `stan::services` package, model compilation,
 and existing Stan utilities such as `stansummary`.
+By adding CmdStan3's `bin` directory to their path,
+a user can run Stan models from any directory.
+
 
 ### Command syntax 
 
