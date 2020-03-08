@@ -13,6 +13,8 @@ When computing a MAP estimate, the Hessian of the log density can be used to con
 
 I have a Stan model that is too slow to practically sample all the time. Because optimization seem to give reasonable results, it would be nice to have the normal approximation to the posterior to give some sense of the uncertainty in the problem as well.
 
+An approximate posterior covariance comes from computing the inverse of the Hessian of log density.
+
 Rstan already supports this via the 'hessian' argument to 'optimizing'.
 
 # Guide-level explanation
@@ -49,8 +51,8 @@ I would like to print the Hessian of the log density with respect to the model p
 lp__,b.1,b.2
 3427.64,7.66366,5.33466
 # Hessian of log density:
-# 0.0813676, 0.014598
-# 0.014598, 0.112342
+# -0.0813676, -0.014598
+# -0.014598, -0.112342
 ```
 
 # Reference-level explanation
@@ -68,7 +70,7 @@ Printing out the matrix in the comments like this might seem rather crude, but i
 
 Another design would be to print out the Hessian in unconstrained space. This is less interpretable thana constrained space and it would be non-trivial to compute this Hessian into the one in constrained space, so I think the constrained space Hessian should be preferred. We could possibly add another option to Hessian (0, 1, 2) to allow for this functionality.
 
-Rstan actually provides samples from the normal approximation to go along with the normal approximation to the posterior. I think we should not do this because it's not always true that the Hessian is numerically positive definite at the mode. This could be because the MAP estimate has gone to infinity or something (estimating the mode of 8-schools), or just something funny with the numerics. Either way it is quite possible it happens during model development and it would be nice to avoid producing too many errors.
+Rstan actually provides samples from the normal approximation to go along with the normal approximation to the posterior. I think we should not do this because it's not always true that the Hessian is numerically negative definite at the mode. This could be because the MAP estimate has gone to infinity or something (estimating the mode of 8-schools), or just something funny with the numerics. Either way it is quite possible it happens during model development and it would be nice to avoid producing too many errors.
 
 It is fairly straightforward in R and Python to sample from a multivariate normal, and so I think we can reasonably leave this to the user.
 
