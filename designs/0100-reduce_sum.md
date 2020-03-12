@@ -37,10 +37,12 @@ real reduce_sum(F func, T[] sliced_arg, int grainsize, T1 arg1, T2 arg2, ...)
 where the function ```func``` has a signature like:
 
 ```
-real func(int start, int end, T[] sliced_arg, T1 arg1, T2 arg2, ...)
+real func(int start, int end, T[] subset_sliced_arg, T1 arg1, T2 arg2, ...)
 ```
 
-The array ```sliced_arg``` in each case represents the list of calculations to perform and sum. The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The trailing arguments ```argN``` are passed without modification to every call of ```func```.
+The array ```sliced_arg``` in the reduce_sum call represents the list of calculations to perform and sum.
+
+The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is only passed the subset ```sliced_arg[start:end]``` of sliced arg (as ```subset_sliced_arg```). ```start``` and ```end``` are passed so that ```func``` can index any of the ```argN``` appropriately. The trailing arguments ```argN``` are passed without modification to every call of ```func```.
 
 An overall call to ```reduce_sum``` can be replaced by either:
 
@@ -57,7 +59,7 @@ for(i in 1:size(sliced_arg)) {
 }
 ```
 
-The argument ```sliced_arg``` is called the sliced argument because func only receives the elements of ```sliced_arg``` for which it is responsible. All the other ```argN``` arguments are shared completely between every call to func.
+The argument ```sliced_arg``` is called the sliced argument because func only receives the elements of ```sliced_arg``` for which it is responsible (in ```subset_sliced_arg```). All the other ```argN``` arguments are shared completely between every call to func.
 
 By requiring that the user provided function perform the calculation over a range of inputs, it is possible for the scheduler to lump smaller pieces of work together into big ones (and increase efficiency). This is done by adjusting the ```grainsize``` argument. The scheduler will try to cut up the N parallel terms into groups of size grainsize.
 
@@ -118,8 +120,8 @@ real parallel(int start, int end, int[] Y, int[] trials,
 
 And the model block call:
 ```
-target += reduce_sum(parallel, Y[1:N_subset], grainsize, trials,
-                     temp_Intercept, Xc[1:N_subset], b,
+target += reduce_sum(parallel, Y, grainsize, trials,
+                     temp_Intercept, Xc, b,
                      r_1_1, J_1, Z_1_1, r_1_2, Z_1_2,
                      r_2_1, J_2, Z_2_1,
                      r_3_1, J_3, Z_3_1, r_3_2, Z_3_2,
@@ -138,11 +140,52 @@ I'd like to emphasize the similarity between the original code in the model bloc
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-The argument packing/unpacking is avoided by using lots of C++ parameter packs.
+The argument packing/unpacking is avoided by using lots of C++ parameter packs, the parallelization is managed by the existing TBB autodiff extensions (each TBB worker thread gets its own separate nested autodiff stack), and by requiring that the output of all the functions to be a scalar, this calculation can be done efficiently with nested forward mode autodiff. In this way the autodiff work is parallelized without having to add any parallelization mechanism to the reverse mode sweep.
 
-The parallelization is managed by the existing TBB autodiff extensions (each TBB worker thread gets its own separate nested autodiff stack).
+There are hidden costs associated with the nested autodiff, however. If there are N items, TBB, depending on the grainsize, schedules chunks of work to be done by different threads. For each of these chunks of work, we figure out how many autodiff variables there are on the input and make copies of them on the specific thread-local stacks. We make sure that any autodiff done on these copied variables does not affect the autodiff variables on the main stack. Without this copying, we would have to deal with race conditions.
 
-By requiring that the output of all the functions to be a scalar, this calculation can be embedded efficiently in the forward pass by computing the Jacobian of the operation. In this way the autodiff work is parallelized without having to add any parallelization mechanism to the reverse mode sweep.
+As such, there are up to N + M * P autodiff variable copies performed for each reduce_sum where:
+
+1. N is the number of individual operations over which we are reducing
+2. M is the number of blocks of work that TBB sections work up into
+
+and
+
+3. P is the number of autodiff variables in ```(arg1, arg2, ...)``` (... meaning all the trailing arguments)
+
+reduce_sum was designed specifically for the case that ```N >> P```.
+
+Regarding the first term (N), if the sliced_arg is of underlying type double or int, there is no autodiff copy performed.
+
+M (the number of blocks of works that TBB chooses) will be decided by the number of work individual operations (N) and the grainsize. It should roughly be N / grainsize. If grainsize is small compared to the number of autodiff variables in the input arguments, then the overhead of copying disconnecting the nested autodiff stack from the main one will probably become evident. Experimentally, a large grainsize can be detrimental to performance overall, though, so grainsize will probably have to be implemented manually via user experimentation.
+
+Regarding P, consider the variables defined by the C++ code:
+```
+var a = 5.0; // one autodiff variable
+double b = 5.0; // zero autodiff variables
+int c = 5; // zero autodiff variables
+std::vector<var> d = {1.0, 2.0} // two autodiff variables
+std::vector<double> e = {1.0, 2.0} // zero autodiff variables
+std::vector<int> f = {1, 2} // zero autodiff variables
+Eigen::Matrix<var, Eigen::Dynamic, 1> g(3); // three autodiff variables
+Eigen::Matrix<double, Eigen::Dynamic, 1> h(3); // zero autodiff variables
+Eigen::Matrix<var, 1, Eigen::Dynamic> i(4); // four autodiff variables
+Eigen::Matrix<double, 1, Eigen::Dynamic> j(4); // zero autodiff variables
+Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic> k(5, 5); // twenty-five autodiff variables
+Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> l(5, 5); // zero autodiff variables
+```
+
+Now, together as a collection of arguments:
+```
+(a, b, c) // P = 1
+(e, g, i, l) // P = 7
+(a, d, g) // P = 6
+```
+
+Repeat autodiff arguments are counted multiple times:
+```
+(a, a, a) // P = 3
+```
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -166,4 +209,6 @@ The previous example of parallelization in Stan is map-rect. Using map-rect was 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-There are performance problems with the current design. In isolated testing, we can get linear speedup with the number of cores. In practical models, the speedups seem much more limited. See discussions in https://discourse.mc-stan.org/t/parallel-autodiff-v4/13111.
+In isolated testing, we can get linear speedup with the number of cores. In practical models, the speedups seem much more limited. See discussions in https://discourse.mc-stan.org/t/parallel-autodiff-v4/13111. For small problems, that seems to be between 3x and 4x speedup. No testing has been done on models that take more than a few minutes to run, so it's possible we're just not making the problems large enough.
+
+It seems like choosing the grainsize is a tricky thing, because it's possible to get it too small and too big pretty easily. We'll need doc in the user guide with maybe a graph to show people how to pick it.
