@@ -13,7 +13,16 @@ When computing a MAP estimate, the Hessian of the log density can be used to con
 
 I have a Stan model that is too slow to practically sample all the time. Because optimization seem to give reasonable results, it would be nice to have the normal approximation to the posterior to give some sense of the uncertainty in the problem as well.
 
-An approximate posterior covariance comes from computing the inverse of the Hessian of the negative log density.
+It is standard to compute a normal approximation to the posterior covariance comes from the inverse of the Hessian of the negative log density.
+
+If the MAP estimate is ```u```, and the Hessian of the unnormalized log density at u is ```H```, then a posterior draw on the constrained scale is:
+
+```
+unconstrained_sample = multivariate_normal_rng(mean = u, cov = -inverse(H))
+constrained_sample = constrain(unconstrained_sample)
+```
+
+We can output unnormalized log densities of the actual model and the approximate model to compute importance sampling diagnostics and estimates.
 
 Rstan already supports this via the 'hessian' argument to 'optimizing'.
 
@@ -24,7 +33,7 @@ This adds two arguments to the cmdstan interface.
 
 ```laplace_draws``` - The number of draws to take from the posterior approximation. By default, this is zero, and no laplace approximation is done
 
-```laplace_diag_shift``` - A value to add to the diagonal of the hessian approximation to fix small non-singularities (defaulting to zero)
+```laplace_add_diag``` - A value to add to the diagonal of the hessian approximation to fix small non-singularities (defaulting to zero)
 
 The output is printed after the optimimum.
 
@@ -33,9 +42,9 @@ A model can be called by:
 ./model optimize laplace_draws=100 data file=data.dat
 ```
 
-or with the diagonal shift:
+or with the diagonal:
 ```
-./model optimize laplace_draws=100 laplace_diag_shift=1e-10 data file=data.dat
+./model optimize laplace_draws=100 laplace_add_diag=1e-10 data file=data.dat
 ```
 
 Optimizing output currently looks like:
@@ -56,22 +65,26 @@ The new output would look like:
 lp__,b.1,b.2
 3427.64,7.66366,5.33466
 # Draws from Laplace approximation:
-b.1,b.2
-7.66364,5.33463
-7.66367,5.33462
+lp__, log_p, log_g, b.1,b.2
+0, -1, -2, 7.66364,5.33463
+0, -2, -3, 7.66367,5.33462
 ```
+
+The lp__, log_p, log_g formatting is intended to mirror the advi output.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
 As far as computing the Hessian, because the higher order autodiff doesn't work with the ODE solvers 1D integrator and such, I think we should compute the Hessian with finite differences, and we use the sample finite difference implementation that the test framework does (https://github.com/stan-dev/math/blob/develop/stan/math/prim/functor/finite_diff_hessian_auto.hpp)
 
+Ben Goodrich points out it would be better to get this Hessian using finite differences of first order gradients. He is correct, but the fully finite differenced hessian is what is implemented in Stan math currently and so that is what I'm rolling with.
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
 Providing draws instead of the Laplace approximation itself is rather inefficient, but it is the easiest thing to code.
 
-We also have to deal with possible singular Hessians. This is why I also added the laplace_diag_shift to overcome these. They'll probably be quite common, especially with the Hessians computed with finite differences.
+We also have to deal with possible singular Hessians. This is why I also added the laplace_add_diag to overcome these. They'll probably be quite common, especially with the Hessians computed with finite differences.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
