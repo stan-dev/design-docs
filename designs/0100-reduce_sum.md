@@ -16,33 +16,60 @@ The overall goal of reduce_sum is to make it easier for users to parallelize the
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-reduce_sum is effectively a parallel-for combined with a sum.
+```reduce_sum``` is a tool for parallelizing operations that can be represented as a parallel-for combined with a sum (that returns a scalar).
 
-For a set of input arguments, ```args0, args1, args2, ...``` and a scalar function ```f```, reduce_sum computes the scalar:
+In terms of probabilistic models, an example of this comes up when N terms in a likelihood combined multiplicatively and can be computed independently of each other (where independence here is in the computational sense, not necessarily the statistical sense). In this case, computing the log density means computing the sum of a number of terms that can each be computed separately. 
+
+```reduce_sum``` is not useful when there are dependencies between the terms. This can happen, for instance, if there were N terms in a Gaussian process likelihood. ```reduce_sum``` will not be useful for accelerating this.
+
+If for a set of input arguments, ```args0, args1, args2, ...``` and a scalar function ```f```, the log likelihood can be computed as:
 
 ```f(args0) + f(args1) + f(args2) + ...```
 
-In terms of probabilistic models, this is useful when there are N terms in a likelihood that combine multiplicatively. In this case, computing the log likelihood means computing the sum of the log of each of these terms. If a function ```f``` can be written that computes an individual log likelihood, then reduce_sum can be used to compute them all in parallel and accumulate the results.
+then this calculation can be written as a reduction over the set of arguments. If this reducing function is called ```reduce```, then it would need to perform the operations:
 
-The actual meaning of N is flexible here. In a regression model, N might be the N different rows of the input dataframe, each which can be evaluated separately. In a hierarchical model, N might correspond to different groups -- perhaps there is some complex shared calculation for each group but these can all be done in parallel.
+```reduce({ args0, args1, args2, ... }) = f(args0) + f(args1) + f(args2) + ...```
 
-reduce_sum is not useful, however, when there are dependencies between these likelihood terms. This can happen, for instance, if there were N terms in a Gaussian process likelihood. reduce_sum will not be useful for accelerating this.
+If the user can write a function like ```reduce```, then it is trivial for us to provide a function to automatically parallelize the calculations.
 
-The signature we settled on for reduce_sum (which balances the different tradeoffs described in the Summary) is:
+Again, if the set of work is represented as a list of arguments ``{ args0, args1, args2, ... }```, then mathematically it is possible to rewrite this sum with any combination of partial-reduces.
+
+For instance, the sum can be written:
+
+1. ```reduce({ args0, args1, args2, ... })```, summing over all arguments, using one reduce function
+2. ```reduce({ args0, ..., args(M - 1) }) + reduce({ argsM, args2, ...})```, computing the first M terms separately from the rest
+3. ```reduce({ args0 }) + reduce({ args1 }) + reduce({ args2 }) + ...```, computing each term individually and summing them
+
+The first function call is completely serial, the second can be parallelized over two workers, and the last can be parallelized over as many workers as there are arguments. Depending on how the list is sliced up, it is possible to parallelize this calculation over many workers.
+
+```reduce_sum``` is the tool that will allow us to automatically parallelize these reduce operations (and sum them together).
+
+To implement this efficiently in Stan, the individual arguments are split into two types. The first are the arguments that are specific to each term in the reduction. These are called the sliced arguments (because we will slice these up to determine how to distribute the work). The second type of arguments are shared arguments, and are information that is shared in the computation of every term in the sum.
+
+Given this, the signature for reduce_sum is:
 
 ```
 real reduce_sum(F func, T[] sliced_arg, int grainsize, T1 arg1, T2 arg2, ...)
 ```
 
-where the function ```func``` has a signature like:
+1. ```func``` - The user-defined reduce function
+2. ```sliced_arg``` - An array of any type, with each element of the array corresponding to a term of the final summation (the length of ```sliced_arg``` is the total number of terms to sum)
+3. ```grainsize``` - A hint to the runtime of how many terms of the summation to compute in each reduction
+4-. ```arg1, arg2, ...``` - All the arguments that are to be shared in the calculation of every term in the sum
+
+The user-defined reduce function is slightly different:
 
 ```
 real func(int start, int end, T[] subset_sliced_arg, T1 arg1, T2 arg2, ...)
 ```
 
-The array ```sliced_arg``` in the reduce_sum call represents the list of calculations to perform and sum.
+and takes the arguments:
+1. ```start``` - An integer specifying the first element of the sequence of terms this reduce call is responsible for computing
+2. ```end``` - An integer specifying the last element of the sequence of terms this reduce call is responsible for computing
+3. ```subset_sliced_arg``` - The subset of sliced_arg for which this reduce is responsible (```sliced_arg[start:end]```)
+4-. ```arg1, arg2, ...``` all the shared arguments -- passed on without modification from the reduce_sum call
 
-The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is only passed the subset ```sliced_arg[start:end]``` of sliced arg (as ```subset_sliced_arg```). ```start``` and ```end``` are passed so that ```func``` can index any of the ```argN``` appropriately. The trailing arguments ```argN``` are passed without modification to every call of ```func```.
+The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is only passed the subset ```sliced_arg[start:end]``` of sliced arg (as ```subset_sliced_arg```). ```start``` and ```end``` are passed so that ```func``` can index any of the ```argM``` appropriately. The trailing arguments ```argM``` are passed without modification to every call of ```func```.
 
 An overall call to ```reduce_sum``` can be replaced by either:
 
@@ -58,10 +85,6 @@ for(i in 1:size(sliced_arg)) {
   sum = sum + func(i, i, { sliced_arg[i] }, arg1, arg2, ...);
 }
 ```
-
-The argument ```sliced_arg``` is called the sliced argument because func only receives the elements of ```sliced_arg``` for which it is responsible (in ```subset_sliced_arg```). All the other ```argN``` arguments are shared completely between every call to func.
-
-By requiring that the user provided function perform the calculation over a range of inputs, it is possible for the scheduler to lump smaller pieces of work together into big ones (and increase efficiency). This is done by adjusting the ```grainsize``` argument. The scheduler will try to cut up the N parallel terms into groups of size grainsize.
 
 As an example, the hierarchical model code:
 ```
@@ -135,8 +158,6 @@ target += reduce_sum(parallel, Y, grainsize, trials,
                      r_11_1, J_11, Z_11_1, r_11_2, Z_11_2);
 ```
 
-I'd like to emphasize the similarity between the original code in the model block and the new user-defined function. This mechanism should make it substantially easier to write parallel code in Stan.
-
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
@@ -190,25 +211,38 @@ Repeat autodiff arguments are counted multiple times:
 # Drawbacks
 [drawbacks]: #drawbacks
 
-I believe the main drawback is maintenance. I'm hoping this makes most uses of threaded map-rect defunct. Similarly parallelization in reverse mode autodiff might make this not so useful eventually, in which case we have the question of maintenance and backwards compatibility.
+The main drawback of this new function is the danger that this is replaced by some more advanced and easier to use parallelization mechanism. If that happens, it will be very easy to implement a failsafe backwards compatibility version of reduce_sum that leans on the fact that:
+
+```
+real sum = reduce_sum(func, sliced_arg, arg1, arg2, ...)
+```
+
+can be replaced by:
+
+```
+real sum = func(1, size(sliced_arg), sliced_arg, arg1, arg2, ...)
+```
+
+where ```func``` was always provided by the user.
+
+In isolated testing, we can get linear speedup with the number of cores. In practical models, the speedups seem much more limited. See discussions in https://discourse.mc-stan.org/t/parallel-autodiff-v4/13111. For memory bound problems, it is difficult to get more than a 2x or 3x speedup. For larger problems, more is possible. In any case, ```reduce_sum``` is just as efficient as ```map_rect```.
+
+Choosing grainsize (the ideal number of terms the tbb scheduler will try to compute in each reduce) is a tricky thing. It is possible for the grainsize to be too small (in which case autodiff overhead slows down the sum) or get the grainsize too large (in which case things slow down too -- probably because of memory usage). We will have to add to the docs instructions on how to pick this, and perhaps an example of performance vs. grainsize for a given model and number of threads.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
 The reduce_sum parallelization mechanism is desirable largely because it doesn't require any large reworking of the autodiff system and can be implemented with threads in the TBB pretty painlessly.
 
-One limitation we might remove from reduce sum would be to allow non-scalar outputs. The issue here is that to make use of autodiff efficiently in this case we would need to do parallel calculations during the reverse mode sweep. This currently isn't possible with Stan's autodiff.
+In the future it is possible that the scalar output assumption is lifted, but that will only realistically be reasonable once it is possible to do parallel computions during the reverse mode sweep. This currently isn't possible with Stan's autodiff.
 
 There was some discussion of backends for this functionality (MPI vs. threading). There is no reason this could not be ported to work with MPI, though the performance characteristics would change.
 
 # Prior art
 [prior-art]: #prior-art
 
-The previous example of parallelization in Stan is map-rect. Using map-rect was awkward primarily because of the argument packing.
+The previous example of parallelization in Stan is map-rect. Argument packing made using map-rect difficult, and the goal here is to overcome that difficulty.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-In isolated testing, we can get linear speedup with the number of cores. In practical models, the speedups seem much more limited. See discussions in https://discourse.mc-stan.org/t/parallel-autodiff-v4/13111. For small problems, that seems to be between 3x and 4x speedup. No testing has been done on models that take more than a few minutes to run, so it's possible we're just not making the problems large enough.
-
-It seems like choosing the grainsize is a tricky thing, because it's possible to get it too small and too big pretty easily. We'll need doc in the user guide with maybe a graph to show people how to pick it.
