@@ -11,151 +11,164 @@ The reduce_sum function is an attempt to add a parallelization utility that is m
 # Motivation
 [motivation]: #motivation
 
-The overall goal of reduce_sum is to make it easier for users to parallelize their models by streamlining how arguments are handled, hiding work scheduling, and making it more difficult to program something that will accidentally be inefficient.
+The goal of reduce_sum is to make it easier for users to parallelize their models by streamlining how arguments are handled, hiding work scheduling, and making it more difficult to program something that will accidentally be inefficient.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-```reduce_sum``` is a tool for parallelizing operations that can be represented as a parallel-for combined with a sum (that returns a scalar).
+```reduce_sum``` is a tool for parallelizing operations that can be represented as a sum of functions, `g: U -> real`.
 
-In terms of probabilistic models, an example of this comes up when N terms in a likelihood combined multiplicatively and can be computed independently of each other (where independence here is in the computational sense, not necessarily the statistical sense). In this case, computing the log density means computing the sum of a number of terms that can each be computed separately. 
+For instance, for a sequence of ```x``` values of type ```U```, ```{ x1, x2, ... }```, we might compute the sum:
 
-```reduce_sum``` is not useful when there are dependencies between the terms. This can happen, for instance, if there were N terms in a Gaussian process likelihood. ```reduce_sum``` will not be useful for accelerating this.
+```g(x1) + g(x2) + ...```
 
-If for a set of input arguments, ```args0, args1, args2, ...``` and a scalar function ```f```, the log likelihood can be computed as:
+In terms of probabilistic models, comes up when there are N conditionally independent terms in a likelihood. In these cases each conditionally indepedent term can be computed in parallel. If dependencies exist between the terms, then this isn't possible. For instance, in evaluating the log density of a Gaussian process ```reduce_sum``` would not be very useful.
 
-```f(args0) + f(args1) + f(args2) + ...```
+```reduce_sum``` doesn't actually take ```g: U -> real``` as an input argument. Instead it takes ```f: U[] -> real```, where ```f``` computes the partial sum corresponding to the slice of the sequence ```x``` passed in. For instance:
 
-then this calculation can be written as a reduction over the set of arguments. If this reducing function is called ```reduce```, then it would need to perform the operations:
+```
+f({ x1, x2, x3 }) = g(x1) + g(x2) + g(x3)
+f({ x1 }) = g(x1)
+f({ x1, x2, x3 }) = f({ x1, x2 }) + f({ x3 })
+```
 
-```reduce({ args0, args1, args2, ... }) = f(args0) + f(args1) + f(args2) + ...```
+If the user can write a function ```f: U[] -> real``` to compute the necessary partial sums in the calculation, then we can provide a function to automatically parallelize the calculations (and this is what ```reduce_sum``` is).
 
-If the user can write a function like ```reduce```, then it is trivial for us to provide a function to automatically parallelize the calculations.
-
-Again, if the set of work is represented as a list of arguments ``{ args0, args1, args2, ... }```, then mathematically it is possible to rewrite this sum with any combination of partial-reduces.
+If the set of work is represented as an array ```{ x1, x2, x3, ... }```, then mathematically it is possible to rewrite this sum with any combination of partial sums.
 
 For instance, the sum can be written:
 
-1. ```reduce({ args0, args1, args2, ... })```, summing over all arguments, using one reduce function
-2. ```reduce({ args0, ..., args(M - 1) }) + reduce({ argsM, args2, ...})```, computing the first M terms separately from the rest
-3. ```reduce({ args0 }) + reduce({ args1 }) + reduce({ args2 }) + ...```, computing each term individually and summing them
+1. ```f({ x1, x2, x3, ... })```, summing over all arguments, using one partial sum
+2. ```f({ x1, ..., xM }) + reduce({ x(M + 1), x(M + 2), ...})```, computing the first M terms separately from the rest
+3. ```f({ x1 }) + f({ x2 }) + f({ x3 }) + ...```, computing each term individually and summing them
 
-The first function call is completely serial, the second can be parallelized over two workers, and the last can be parallelized over as many workers as there are arguments. Depending on how the list is sliced up, it is possible to parallelize this calculation over many workers.
+The first form uses only one partial sum and no parallelization can be done, the second uses two partial sums and so can be parallelized over two workers, and the last can be parallelized over as many workers as there are elements in the array of ```x```s. Depending on how the list is sliced up, it is possible to parallelize this calculation over many workers.
 
-```reduce_sum``` is the tool that will allow us to automatically parallelize these reduce operations (and sum them together).
+```reduce_sum``` is the tool that will allow us to automatically parallelize this calculation. ```x``` is called the sliced array, because it will be automatically sliced up for the parallelization.
 
-To implement this efficiently in Stan, the individual arguments are split into two types. The first are the arguments that are specific to each term in the reduction. These are called the sliced arguments (because we will slice these up to determine how to distribute the work). The second type of arguments are shared arguments, and are information that is shared in the computation of every term in the sum.
+For efficiency and convenience, ```reduce_sum``` allows for additional shared arguments to be passed to every term in the sum. So for the array ```{ x1, x2, ... }``` and the shared arguments ```s1, s2, ...``` the effective sum (with individual terms) looks like:
+
+```
+g(x1, s1, s2, ...) + g(x2, s1, s2, ...) + g(x3, s1, s2, ...) + ...
+```
+
+which can be written equivalently with partial sums to look like:
+
+```
+f({ x1, x2 }, s1, s2, ...) + f({ x3 }, s1, s2, ...)
+```
+
+where the particular slicing of the ```x``` array can change.
 
 Given this, the signature for reduce_sum is:
 
 ```
-real reduce_sum(F func, T[] sliced_arg, int grainsize, T1 arg1, T2 arg2, ...)
+real reduce_sum(F func, T[] sliced_array, int grainsize, T1 s1, T2 s2, ...)
 ```
 
-1. ```func``` - The user-defined reduce function
-2. ```sliced_arg``` - An array of any type, with each element of the array corresponding to a term of the final summation (the length of ```sliced_arg``` is the total number of terms to sum)
-3. ```grainsize``` - A hint to the runtime of how many terms of the summation to compute in each reduction
-4-. ```arg1, arg2, ...``` - All the arguments that are to be shared in the calculation of every term in the sum
+1. ```func``` - User defined function that computes partial sums
+2. ```sliced_array``` - Argument to slice, each element corresponds to a term in the summation
+3. ```grainsize``` - Target for size of slices
+4-. ```s1, s2, ...``` - Arguments shared in every term
 
-The user-defined reduce function is slightly different:
+The user-defined partial sum functions have the signature:
 
 ```
 real func(int start, int end, T[] subset_sliced_arg, T1 arg1, T2 arg2, ...)
 ```
 
-and takes the arguments:
-1. ```start``` - An integer specifying the first element of the sequence of terms this reduce call is responsible for computing
-2. ```end``` - An integer specifying the last element of the sequence of terms this reduce call is responsible for computing
-3. ```subset_sliced_arg``` - The subset of sliced_arg for which this reduce is responsible (```sliced_arg[start:end]```)
-4-. ```arg1, arg2, ...``` all the shared arguments -- passed on without modification from the reduce_sum call
+and take the arguments:
+1. ```start``` - An integer specifying the first term in the partial sum
+2. ```end``` - An integer specifying the last term in the partial sum (inclusive)
+3. ```subset_sliced_array``` - The subset of ```sliced_array``` for which this partial sum is responsible (```sliced_array[start:end]```)
+4-. ```arg1, arg2, ...``` Arguments shared in every term  (passed on without modification from the reduce_sum call)
 
-The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is only passed the subset ```sliced_arg[start:end]``` of sliced arg (as ```subset_sliced_arg```). ```start``` and ```end``` are passed so that ```func``` can index any of the ```argM``` appropriately. The trailing arguments ```argM``` are passed without modification to every call of ```func```.
+The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is passed the subset ```sliced_array[start:end]``` as ```subset_sliced_arg```. ```start``` and ```end``` are passed so that ```func``` can index any of the ```sM``` arguments as necessary. The trailing arguments ```argM``` are passed without modification to every call of ```func```.
 
-An overall call to ```reduce_sum``` can be replaced by either:
+The ```reduce_sum``` call:
 
 ```
-real sum = func(1, size(sliced_arg), sliced_arg, arg1, arg2, ...)
+real sum = reduce_sum(func, sliced_array, grainsize, s1, s2, ...)
 ```
 
-or (modulo differences due to rearrangements of summations) the code:
+can be replaced by either:
+
+```
+real sum = func(1, size(sliced_array), sliced_array, s1, s2, ...)
+```
+
+or the code:
 
 ```
 real sum = 0.0;
-for(i in 1:size(sliced_arg)) {
-  sum = sum + func(i, i, { sliced_arg[i] }, arg1, arg2, ...);
+for(i in 1:size(sliced_array)) {
+  sum = sum + func(i, i, { sliced_array[i] }, s1, s2, ...);
 }
 ```
 
-As an example, the hierarchical model code:
+As an example, in the regression:
 ```
-vector[N_subset] mu = temp_Intercept + Xc[1:N_subset] * b;
-for (n in 1:N_subset) {
-  mu[n] += r_1_1[J_1[n]] * Z_1_1[n] + r_1_2[J_1[n]] * Z_1_2[n] +
-    r_2_1[J_2[n]] * Z_2_1[n] +
-    r_3_1[J_3[n]] * Z_3_1[n] + r_3_2[J_3[n]] * Z_3_2[n] +
-    r_4_1[J_4[n]] * Z_4_1[n] +
-    r_5_1[J_5[n]] * Z_5_1[n] +
-    r_6_1[J_6[n]] * Z_6_1[n] + r_6_2[J_6[n]] * Z_6_2[n] +
-    r_7_1[J_7[n]] * Z_7_1[n] + r_7_2[J_7[n]] * Z_7_2[n] +
-    r_8_1[J_8[n]] * Z_8_1[n] +
-    r_9_1[J_9[n]] * Z_9_1[n] +
-    r_10_1[J_10[n]] * Z_10_1[n] +
-    r_11_1[J_11[n]] * Z_11_1[n] + r_11_2[J_11[n]] * Z_11_2[n];
+data {
+  int N;
+  int y[N];
+  vector[N] x;
 }
-target += binomial_logit_lpmf(Y[1:N_subset] | trials[1:N_subset], mu);
+
+parameters {
+  vector[2] beta;
+}
+
+model {
+  beta ~ std_normal();
+  y ~ bernoulli_logit(beta[1] + beta[2] * x);
+}
 ```
 
-can be replaced with a function for computing the partial sums:
-```
-real parallel(int start, int end, int[] Y, int[] trials,
-              real temp_Intercept, matrix Xc, vector b,
-              vector r_1_1, int[] J_1, vector Z_1_1, vector r_1_2, vector Z_1_2,
-              vector r_2_1, int[] J_2, vector Z_2_1,
-              vector r_3_1, int[] J_3, vector Z_3_1, vector r_3_2, vector Z_3_2,
-              vector r_4_1, int[] J_4, vector Z_4_1,
-              vector r_5_1, int[] J_5, vector Z_5_1,
-              vector r_6_1, int[] J_6, vector Z_6_1, vector r_6_2, vector Z_6_2,
-              vector r_7_1, int[] J_7, vector Z_7_1, vector r_7_2, vector Z_7_2,
-              vector r_8_1, int[] J_8, vector Z_8_1,
-              vector r_9_1, int[] J_9, vector Z_9_1,
-              vector r_10_1, int[] J_10, vector Z_10_1,
-              vector r_11_1, int[] J_11, vector Z_11_1, vector r_11_2, vector Z_11_2) {
-  int N = size(Y);
-  vector[N] mu = temp_Intercept + Xc[start:end] * b;
+the likelihood term:
 
-  for (n in start:end) {
-    mu[n - start + 1] += r_1_1[J_1[n]] * Z_1_1[n] + r_1_2[J_1[n]] * Z_1_2[n] +
-      r_2_1[J_2[n]] * Z_2_1[n] +
-      r_3_1[J_3[n]] * Z_3_1[n] + r_3_2[J_3[n]] * Z_3_2[n] +
-      r_4_1[J_4[n]] * Z_4_1[n] +
-      r_5_1[J_5[n]] * Z_5_1[n] +
-      r_6_1[J_6[n]] * Z_6_1[n] + r_6_2[J_6[n]] * Z_6_2[n] +
-      r_7_1[J_7[n]] * Z_7_1[n] + r_7_2[J_7[n]] * Z_7_2[n] +
-      r_8_1[J_8[n]] * Z_8_1[n] +
-      r_9_1[J_9[n]] * Z_9_1[n] +
-      r_10_1[J_10[n]] * Z_10_1[n] +
-      r_11_1[J_11[n]] * Z_11_1[n] + r_11_2[J_11[n]] * Z_11_2[n];
+```
+y ~ bernoulli_logit(beta[1] + beta[2] * x);
+```
+
+can be written equivalently (up to a constant of proportionality) as a sum over terms:
+
+```
+for(n in 1:N) {
+  target += bernoulli_logit_pmf(y | beta[1] + beta[2] * x);
+}
+```
+
+Because this sum can be broken up into partial sums, ```reduce_sum``` can be used
+to parallelize this model. Writing the function for the partial sums and
+updating the model block to use ```reduce_sum``` gives:
+
+```
+functions {
+  real partial_sum(int start, int end,
+                    int[] subset_y,
+                    vector x,
+                    vector beta) {
+    return bernoulli_logit_lpmf(subset_y | beta[1] + beta[2] * x[start:end]);
   }
-
-  return binomial_logit_lpmf(Y | trials[start:end], mu);
 }
-```
 
-And the model block call:
-```
-target += reduce_sum(parallel, Y, grainsize, trials,
-                     temp_Intercept, Xc, b,
-                     r_1_1, J_1, Z_1_1, r_1_2, Z_1_2,
-                     r_2_1, J_2, Z_2_1,
-                     r_3_1, J_3, Z_3_1, r_3_2, Z_3_2,
-                     r_4_1, J_4, Z_4_1,
-                     r_5_1, J_5, Z_5_1,
-                     r_6_1, J_6, Z_6_1, r_6_2, Z_6_2,
-                     r_7_1, J_7, Z_7_1, r_7_2, Z_7_2,
-                     r_8_1, J_8, Z_8_1,
-                     r_9_1, J_9, Z_9_1,
-                     r_10_1, J_10, Z_10_1,
-                     r_11_1, J_11, Z_11_1, r_11_2, Z_11_2);
+data {
+  int N;
+  int y[N];
+  vector[N] x;
+}
+
+parameters {
+  vector[2] beta;
+}
+
+model {
+  int grainsize = 100;
+  beta ~ std_normal();
+  target += reduce_sum(reducer_func, y,
+                       grainsize,
+                       x, beta);
+}
 ```
 
 # Reference-level explanation
