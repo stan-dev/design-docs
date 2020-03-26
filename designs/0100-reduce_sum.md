@@ -74,7 +74,7 @@ real reduce_sum(F func, T[] x, int grainsize, T1 s1, T2 s2, ...)
 The user-defined partial sum functions have the signature:
 
 ```
-real func(int start, int end, T[] subset_x, T1 arg1, T2 arg2, ...)
+real func(int start, int end, T[] x_subset, T1 arg1, T2 arg2, ...)
 ```
 
 and take the arguments:
