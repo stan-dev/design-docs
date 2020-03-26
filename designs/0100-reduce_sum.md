@@ -42,9 +42,9 @@ For instance, the sum can be written:
 2. ```f({ x1, ..., xM }) + reduce({ x(M + 1), x(M + 2), ...})```, computing the first M terms separately from the rest
 3. ```f({ x1 }) + f({ x2 }) + f({ x3 }) + ...```, computing each term individually and summing them
 
-The first form uses only one partial sum and no parallelization can be done, the second uses two partial sums and so can be parallelized over two workers, and the last can be parallelized over as many workers as there are elements in the array of ```x```s. Depending on how the list is sliced up, it is possible to parallelize this calculation over many workers.
+The first form uses only one partial sum and no parallelization can be done, the second uses two partial sums and so can be parallelized over two workers, and the last can be parallelized over as many workers as there are elements in the array ```x```. Depending on how the list is sliced up, it is possible to parallelize this calculation over many workers.
 
-```reduce_sum``` is the tool that will allow us to automatically parallelize this calculation. ```x``` is called the sliced array, because it will be automatically sliced up for the parallelization.
+```reduce_sum``` is the tool that will allow us to automatically parallelize this calculation.
 
 For efficiency and convenience, ```reduce_sum``` allows for additional shared arguments to be passed to every term in the sum. So for the array ```{ x1, x2, ... }``` and the shared arguments ```s1, s2, ...``` the effective sum (with individual terms) looks like:
 
@@ -63,46 +63,46 @@ where the particular slicing of the ```x``` array can change.
 Given this, the signature for reduce_sum is:
 
 ```
-real reduce_sum(F func, T[] sliced_array, int grainsize, T1 s1, T2 s2, ...)
+real reduce_sum(F func, T[] x, int grainsize, T1 s1, T2 s2, ...)
 ```
 
 1. ```func``` - User defined function that computes partial sums
-2. ```sliced_array``` - Argument to slice, each element corresponds to a term in the summation
+2. ```x``` - Argument to slice, each element corresponds to a term in the summation
 3. ```grainsize``` - Target for size of slices
 4-. ```s1, s2, ...``` - Arguments shared in every term
 
 The user-defined partial sum functions have the signature:
 
 ```
-real func(int start, int end, T[] subset_sliced_arg, T1 arg1, T2 arg2, ...)
+real func(int start, int end, T[] subset_x, T1 arg1, T2 arg2, ...)
 ```
 
 and take the arguments:
 1. ```start``` - An integer specifying the first term in the partial sum
 2. ```end``` - An integer specifying the last term in the partial sum (inclusive)
-3. ```subset_sliced_array``` - The subset of ```sliced_array``` for which this partial sum is responsible (```sliced_array[start:end]```)
+3. ```x_subset``` - The subset of ```x``` (from ```reduce_sum```) for which this partial sum is responsible (```x[start:end]```)
 4-. ```arg1, arg2, ...``` Arguments shared in every term  (passed on without modification from the reduce_sum call)
 
-The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is passed the subset ```sliced_array[start:end]``` as ```subset_sliced_arg```. ```start``` and ```end``` are passed so that ```func``` can index any of the ```sM``` arguments as necessary. The trailing arguments ```argM``` are passed without modification to every call of ```func```.
+The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is passed the subset ```x[start:end]``` as ```x_subset```. ```start``` and ```end``` are passed so that ```func``` can index any of the tailing ```sM``` arguments as necessary. The trailing ```sM``` arguments are passed without modification to every call of ```func```.
 
 The ```reduce_sum``` call:
 
 ```
-real sum = reduce_sum(func, sliced_array, grainsize, s1, s2, ...)
+real sum = reduce_sum(func, x, grainsize, s1, s2, ...)
 ```
 
 can be replaced by either:
 
 ```
-real sum = func(1, size(sliced_array), sliced_array, s1, s2, ...)
+real sum = func(1, size(x), x, s1, s2, ...)
 ```
 
 or the code:
 
 ```
 real sum = 0.0;
-for(i in 1:size(sliced_array)) {
-  sum = sum + func(i, i, { sliced_array[i] }, s1, s2, ...);
+for(i in 1:size(x)) {
+  sum = sum + func(i, i, { x[i] }, s1, s2, ...);
 }
 ```
 
@@ -145,10 +145,10 @@ updating the model block to use ```reduce_sum``` gives:
 ```
 functions {
   real partial_sum(int start, int end,
-                    int[] subset_y,
+                    int[] y_subset,
                     vector x,
                     vector beta) {
-    return bernoulli_logit_lpmf(subset_y | beta[1] + beta[2] * x[start:end]);
+    return bernoulli_logit_lpmf(y_subset | beta[1] + beta[2] * x[start:end]);
   }
 }
 
@@ -189,7 +189,7 @@ and
 
 reduce_sum was designed specifically for the case that ```N >> P```.
 
-Regarding the first term (N), if the sliced_arg is of underlying type double or int, there is no autodiff copy performed.
+Regarding the first term (N), if ```x``` does not contain autodiff types, no autodiff copy is performed.
 
 M (the number of blocks of works that TBB chooses) will be decided by the number of work individual operations (N) and the grainsize. It should roughly be N / grainsize. If grainsize is small compared to the number of autodiff variables in the input arguments, then the overhead of copying disconnecting the nested autodiff stack from the main one will probably become evident. Experimentally, a large grainsize can be detrimental to performance overall, though, so grainsize will probably have to be implemented manually via user experimentation.
 
@@ -227,13 +227,13 @@ Repeat autodiff arguments are counted multiple times:
 The main drawback of this new function is the danger that this is replaced by some more advanced and easier to use parallelization mechanism. If that happens, it will be very easy to implement a failsafe backwards compatibility version of reduce_sum that leans on the fact that:
 
 ```
-real sum = reduce_sum(func, sliced_arg, arg1, arg2, ...)
+real sum = reduce_sum(func, x, s1, s2, ...)
 ```
 
 can be replaced by:
 
 ```
-real sum = func(1, size(sliced_arg), sliced_arg, arg1, arg2, ...)
+real sum = func(1, size(x), x, s1, s2, ...)
 ```
 
 where ```func``` was always provided by the user.
