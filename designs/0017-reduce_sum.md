@@ -1,6 +1,6 @@
 - Feature Name: Reduce Sum Parallelization
 - Start Date: 2020-03-10
-- RFC PR:
+- RFC PR: 17
 - Stan Issue:
 
 # Summary
