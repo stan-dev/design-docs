@@ -74,13 +74,13 @@ real reduce_sum(F func, T[] x, int grainsize, T1 s1, T2 s2, ...)
 The user-defined partial sum functions have the signature:
 
 ```
-real func(int start, int end, T[] x_subset, T1 arg1, T2 arg2, ...)
+real func(T[] x_subset, int start, int end, T1 arg1, T2 arg2, ...)
 ```
 
 and take the arguments:
-1. ```start``` - An integer specifying the first term in the partial sum
-2. ```end``` - An integer specifying the last term in the partial sum (inclusive)
-3. ```x_subset``` - The subset of ```x``` (from ```reduce_sum```) for which this partial sum is responsible (```x[start:end]```)
+1. ```x_subset``` - The subset of ```x``` (from ```reduce_sum```) for which this partial sum is responsible (```x[start:end]```)
+2. ```start``` - An integer specifying the first term in the partial sum
+3. ```end``` - An integer specifying the last term in the partial sum (inclusive)
 4-. ```arg1, arg2, ...``` Arguments shared in every term  (passed on without modification from the reduce_sum call)
 
 The user-provided function ```func``` is expect to compute the ```start``` through ```end``` terms of the overall sum, accumulate them, and return that value. The user function is passed the subset ```x[start:end]``` as ```x_subset```. ```start``` and ```end``` are passed so that ```func``` can index any of the tailing ```sM``` arguments as necessary. The trailing ```sM``` arguments are passed without modification to every call of ```func```.
@@ -94,7 +94,7 @@ real sum = reduce_sum(func, x, grainsize, s1, s2, ...)
 can be replaced by either:
 
 ```
-real sum = func(1, size(x), x, s1, s2, ...)
+real sum = func(x, 1, size(x), s1, s2, ...)
 ```
 
 or the code:
@@ -102,7 +102,7 @@ or the code:
 ```
 real sum = 0.0;
 for(i in 1:size(x)) {
-  sum = sum + func(i, i, { x[i] }, s1, s2, ...);
+  sum = sum + func({ x[i] }, i, i, s1, s2, ...);
 }
 ```
 
@@ -144,10 +144,10 @@ updating the model block to use ```reduce_sum``` gives:
 
 ```
 functions {
-  real partial_sum(int start, int end,
-                    int[] y_subset,
-                    vector x,
-                    vector beta) {
+  real partial_sum(int[] y_subset,
+                   int start, int end,
+                   vector x,
+                   vector beta) {
     return bernoulli_logit_lpmf(y_subset | beta[1] + beta[2] * x[start:end]);
   }
 }
@@ -165,7 +165,7 @@ parameters {
 model {
   int grainsize = 100;
   beta ~ std_normal();
-  target += reduce_sum(reducer_func, y,
+  target += reduce_sum(partial_sum, y,
                        grainsize,
                        x, beta);
 }
@@ -233,7 +233,7 @@ real sum = reduce_sum(func, x, s1, s2, ...)
 can be replaced by:
 
 ```
-real sum = func(1, size(x), x, s1, s2, ...)
+real sum = func(x, 1, size(x), s1, s2, ...)
 ```
 
 where ```func``` was always provided by the user.
