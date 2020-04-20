@@ -26,14 +26,14 @@ Assuming `u` are the unconstrained variables, `c` are the constrained variables,
 and `c = g(u)`, the log density sampled by Stan is:
 
 ```
-log(p(u)) = log(p(g(u))) + log(det(jac(g)))
+log(p(u)) = log(p(g(u))) + log(det(jac(g, u)))
 ```
 
-In the Laplace approximation, we search for a mode (a maximum) of
-```log(p(u))```. Call this `u_mode`. This is not the same optimization that is
-done in the `optimizing` algorithm. That searches for a mode of `log(p(g(u)))`
-(or the equation above without the `log(det(jac(g)))` term. These are not the
-same optimizations.
+where `jac(g, u)` is the Jacobian of the function `g` at `u`. In the Laplace
+approximation, we search for a mode (a maximum) of ```log(p(u))```. Call this
+`u_mode`. This is not the same optimization that is done in the `optimizing`
+algorithm. That searches for a mode of `log(p(g(u)))` (or the equation above
+without the `log(det(jac(g, u)))` term. This is different.
 
 We can form a second order Taylor expansion of `log(p(u))` around `u_mode`:
 
