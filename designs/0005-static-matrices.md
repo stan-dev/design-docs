@@ -25,7 +25,7 @@ A[10, 10] = 5;
 
 Besides that they can be thought of as standard matrix.
 
-At the Stan Math level a `static_matrix` is a `var_type<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_type<Eigen::Matrix<double, -1, -1>>`\*. This means that accessors for the value and adjoint of `var_type` objects can access contiguous chunks of each part of the `var_type`. Any function that accept a `var_type<T>` will support static matrices.
+At the Stan Math level a `static_matrix` is a `var_type<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_type<Eigen::Matrix<double, -1, -1>>`*. This means that accessors for the value and adjoint of `var_type` objects can access contiguous chunks of each part of the `var_type`. Any function that accept a `var_type<T>` will support static matrices.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -56,10 +56,10 @@ More templates can be confusing and will lead to larger compile time. The confus
 With `sparse_matrix` and `complex_matrix` this will now add _another_ `*_matrix` type proposal to the language. There's no way to get around this in the Stan language currently, though some small side discussions exist to support attributes on types such as
 
 ```stan
-@(sparse, static)
+@(sparse_type, static_type) // can't have static here because of C++ keyword
 matrix[N, M] X;
 
-@(complex, static)
+@(complex_type, static_type)
 vector[N] Y;
 ```
 
@@ -92,4 +92,4 @@ I'm interested in hearing about Stan language semantics and any difficulties I m
 
 Any intricacies of using the GPU via `var_type<matrix_cl<double>>` should be deferred to a separate discussions or can happen during the implementation.
 
-\*Interestingly, this also means that `var_type<float>` and `var_type<long double>` can be legal.
+*Interestingly, this also means that `var_type<float>` and `var_type<long double>` can be legal.
