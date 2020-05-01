@@ -11,7 +11,7 @@ This proposes a `static_matrix` and `static_vector` type in the Stan language wh
 # Motivation
 [motivation]: #motivation
 
-Currently, a differentiable matrix in Stan is represented as an Eigen matrix holding a pointer to an underlying array of autodiff objects, each of those holding a pointer to the underlying autodiff object implementation. These `N*M` autodiff elements are expensive but necessary so the elements of a matrix can be assigned to without copying the entire matrix. However, in instances where the matrix is treated as a whole object such that underlying subsets of the matrix are never assigned to, we can store one autodiff object representing the entire matrix. Furthermore, because of the non-assignment condition the underlying matrix
+Currently, a differentiable matrix in Stan is represented as an Eigen matrix holding a pointer to an underlying array of autodiff objects, each of those holding a pointer to the underlying autodiff object implementation. These `N*M` autodiff elements are expensive but necessary so the elements of a matrix can be assigned to without copying the entire matrix. However, in instances where the matrix is treated as a whole object such that underlying subsets of the matrix are never assigned to, we can store one autodiff object representing the entire matrix. 
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
