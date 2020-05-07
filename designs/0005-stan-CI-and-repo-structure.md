@@ -3,11 +3,6 @@
 - RFC PR: 
 - Stan Issue: 
 
-This design doc is aimed at upgrading and reorganizing the Stan Continous Integration and Github repository structure.
-Its not a typical design doc as it does not propose anything new to the Stan language or backend. But it will effect our test coverage and hopefully improve the developer experience. The results of these steps will (if accepted) have an effect on most developers, so I figured these will be the best place to do this discussion.
-
-The issues of improving performance testing and numerical testing will be addressed in a separate design-doc that will follow this one in the next days.
-
 # Summary
 [summary]: #summary
 
