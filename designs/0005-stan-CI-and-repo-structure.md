@@ -61,10 +61,17 @@ Tests for the TFP backend.
 
 The order of proposals is not in order of importance, though the first few ones are those where I expect the least amount of controversy. If anyone has any additional proposals please comment with them and we can include them here.
 
-##### Proposal 1: Replace stanc2 tests in stan-dev/stan repository with stanc3
-  
+##### Proposal 1A: Use stanc3 in the stan-dev/stan repository tests and make stanc3 a submodule of stan
 \
-We are currently still using stanc2 in the upstream Math tests and in the Stan repository tests. This should be removed and replaced with equivalent tests that use stanc3. This would also mean we need to somehow "connect" the Stan and stanc3 repositories. I dont think we need to add stanc3 as a submodule of Stan. We should instead somehow mark the latest stanc3 master git commit hash in a separate file or in one of the makefiles. Each merge to master in stanc3 should then update it. This would trigger Stan tests on each merge in Stanc3, which would be another benefit of this.
+We are currently still using stanc2 in the upstream Math tests and in the Stan repository tests. This should be removed and replaced with equivalent tests that use stanc3. Together with this we should somehow connect the Stan and stanc3 repositories. We can do this by making stanc3 a submodule of Stan. But only if we can do this without forcing Stan/Cmdstan developer to install a OCaml development enviroment. Meaning that the default would still be downloading the Stanc3 binary in order to run tests and compile models.
+
+Stanc3 tests would get Stan/Cmdstan upstream tests, which would be another benefit of this as it would increase test coverage.
+
+##### Proposal 1B: Use stanc3 in the stan-dev/stan repository tests
+\
+This proposes the same change as 1A, but instead of making stanc3 a submodule, the latest stanc3 master git commit hash would be marked in the makefiles (`STANC3_GIT_HASH`). Each merge to master in stanc3 would update it.
+
+Similar to 1A, stanc3 tests would get Stan/Cmdstan upstream tests.
 
 ##### Proposal 2: Move stanc2 to a separate (new) repository and add it as a Cmdstan submodule
 \
@@ -80,7 +87,7 @@ Preliminary tests have shown that by doing jumbo files (in chunks of 15 files) i
 \
 Tests files in `test/prob` are generated using the [generate_tests.cpp](https://github.com/stan-dev/math/blob/develop/test/prob/generate_tests.cpp) file. This creates roughly 2700 test files. Compiling these files represents 90%+ of the distribution tests execution time in Stan Math. And the distribution tests are one of the bottlenecks. 
 
-We could improve this by grouping existing test files as in Proposall 3, but in this case this would be done in the generation phase, not after.
+We could improve this by grouping existing test files as in Proposal 3, but in this case this would be done in the generation phase, not after. The primary goal is to speedup the `test/prob` tests on Linux, as that is where we run the distribution tests in our CI.
 
 ##### Proposal 5: Move Windows testing to the RTools 4.0 toolchain
 \
@@ -111,7 +118,7 @@ Stage 2:
 + `STAN_MPI` tests only
 + `test/unit` with `STAN_THREADS` on any OS
 
-I think we dont need additional tests on merge to develop. On request (build with parameters) we could also run the Stage 1 test on all OS (3 tests) in parallel.
+Tests on merge to develop would be the same as regular tests. On request (build with parameters) we could also run the Stage 1 test on all OS (3 tests in parallel).
 
 ###### Stan
 
@@ -133,6 +140,14 @@ I would also like to add tests for Rstan. On all merges to Math/Stan develop we 
 
 ##### Proposal 7: Merge Stan Math with the Stan repository
 \
-This one will be controversial and I will not force it. I do feel it would simplify development for the Math/Stan/Cmdstan repository stack and probably also Rstan with the StanHeaders branch.
+This would simplify development for the Math/Stan/Cmdstan repository stack and probably also Rstan with the StanHeaders branch.
 
 There was 1 non-CI or tests related PR in the Stan repository in the last release period and a few but not much more in the previous release period. There are however more than occasionally Math PRs that require mirroring Stan PRs that have to then be merged in sync. The question is would we lose Stan Math users if they would be forced to use Math as part of a slightly larger repository.
+
+With this proposal we would keep the folder structure intact as well as the build system. Switching the build system can be done subsequently but I would not tie this proposal to a change in the build system. Merging repositories without changes to the build system is a developer-only feature with zero effect to the user.
+
+##### Proposal 8: Merge Stan with the Cmdstan repository
+\
+This proposal is tied to proposal 7 and would be done only if both 7 and 8 are approved. Similar to 7, this simplifies development for the Math/Stan/Cmdstan repository stack by merging the Stan submodule to the Cmdstan repository. Stanc3 would remain a submodule. No changes to the folder structure or build system are proposed here. This change would however simplify changing the build system if we decide to.
+
+One potential issue is the effect on RStan or Pystan releases as they dont require the code currently in Cmdstan. 
