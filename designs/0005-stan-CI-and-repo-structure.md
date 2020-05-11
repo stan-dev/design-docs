@@ -93,9 +93,9 @@ We could improve this by grouping existing test files as in Proposal 3, but in t
 \
 RTools 4.0 was released in April 2020 and we have already seen Stan users moving to it. This means that we should be testing with the toolchains available in RTools 4.0 to make sure everything works there. Testing both 4.0 and 3.5 is obviously not feasible, if for nothing else, due to the lack of Windows testing worker machines. But we should also not leave 3.5 users in the dark as we know many will not upgrade if not forced to.
 
-I propose moving all Windows Jenkins tests to run with RTools 4.0 and adding a separate worker for Windows with RTools 3.5 (WinRT35). For Jenkins tests this means speedup in compile times for the Math and Stan tests. The WinRT35 worker would be used to make sure that everything still works at the Cmdstan level by compiling/running a set of models. WinRT35 could be run in Cmdstan with free instances on Appveyor/Azure or Github Actions.
+We should move all Windows Jenkins tests to run with RTools 4.0 and adding a separate worker for Windows with RTools 3.5 (WinRT35). For Jenkins tests this means speedup in compile times for the Math and Stan tests. The WinRT35 worker would be used to make sure that everything still works at the Cmdstan level by compiling/running a set of models. For now this would be a subset of the example models repository. WinRT35 would be run in the Cmdstan repository on pushes to develop (update in the submodules or merge to develop in cmdstan) with Github Actions.
 
-This means that Windows users of Math and Stan on the C++ level would be forced to switch to using RTools 4.0 if they want to work in a supported (tested) environment. It is very likely, everything will keep working for them for the forseable future (until the move to `C++17`), it will just not be as severely tested. I do believe that the number of Windows users of Cmdstan with RTools 4.0 in the near future is far larger then those of Stan Math or Stan in `C++`.
+This means that Windows users of Math and Stan on the C++ level would be forced to switch to RTools 4.0 if they want to work in a supported (tested) environment. It is very likely everything will keep working for them for the forseable future (at least until the move to `C++17`), it will just not be as rigorously tested at the C++ function level. I do believe that the number of Windows users of Cmdstan with RTools 4.0 in the near future is far larger then those of Stan Math or Stan in `C++`.
 
 ##### Proposal 6: Reorganize Stan Math tests
 \
@@ -105,7 +105,7 @@ The current structure of tests have the following defficiencies (in my opinion):
 - tests with OpenCL and MPI should only run tests files that are affected by these flags. STAN_OPENCL and STAN_MPI have zero effect in tests where they are not used. Where they are used, things will not compile if the flag is not set.
 - there is no need to explicitly single-out Windows so much at the Math level. Threading is done via TBB the same way as on other OSes. In the last year or two, the only Windows-specific issue was the size of test files that caused issues on the 4.9.3 on Jenkins workers only. Locally there were no issues.
  
-My current idea to reorganize tests is:
+The plan to reorganize tests is as follows:
 
 ###### Stan Math:
 \
@@ -118,7 +118,7 @@ Stage 2:
 + `STAN_MPI` tests only
 + `test/unit` with `STAN_THREADS` on any OS
 
-Tests on merge to develop would be the same as regular tests. On request (build with parameters) we could also run the Stage 1 test on all OS (3 tests in parallel).
+Tests on merge to develop would be the same as regular tests. On request (build with parameters) we would be able run the Stage 1 test on all OS (3 tests in parallel).
 
 ###### Stan
 
@@ -126,17 +126,19 @@ Tests on merge to develop would be the same as regular tests. On request (build 
 - services/algorithms and compile tests on Mac
 - services/algorithms and compile tests on Windows
 
-I would remove the Travis tests. The main objective of tests in Stan should be to check the services/algorithms and that everything still compiles from .stan to executables on all OSes.
+We would remove the Travis tests. The main objective of tests in Stan should be to check the services/algorithms and that everything still compiles from .stan files to executables on all OSes.
 
-The performance test in Stan currently runs a simple logistic model 100 times with a fixed seed. The test records to a csv file information about the current build, whether the values match the expected known values and whether values are identical between runs, and the runtime in seconds for each of the 100 individual runs. I don't think this simple test serves any significant real purpose as it is right now. It covers a single example that uses a tiny part of the Stan Math library. A revamped performance and precision tests are needed and will be proposed in a separate design-doc. Those will be done on the interface level, rather than on a Stan C++ level. While there is nothing wrong with the test, it would need to be expanded to have some actual coverage.
+The performance test in Stan currently runs a simple logistic model 100 times with a fixed seed. The test records to a csv file information about the current build, whether the values match the expected known values and whether values are identical between runs, and the runtime in seconds for each of the 100 individual runs. I don't think this simple test serves any significant real purpose as it is right now. It covers a single example that uses a small part of the Stan Math library. A revamped performance and precision tests are needed and will be proposed in a separate design-doc. Those will be done on the interface level, rather than on a Stan C++ level. While there is nothing wrong with the test, it would need to be expanded to have some actual coverage.
 
 ###### Cmdstan and Stanc3
 
-Can stay as is, but Cmdstan performance and precision tests should be expanded. That is a topic for a separate design doc. Changes in stanc3 will trigger stan and cmdstan tests.
+Stanc3 would gain upstream tests (Stan + Cmdstan).
+
+Cmdstan would gain Github Actions tests on Windows with RTools 3.5 (see proposal 5).
 
 ###### Rstan
 
-I would also like to add tests for Rstan. On all merges to Math/Stan develop we would merge develop to the StanHeaders(or StanHeaders_dev) branch and run Rstan package tests and potentially other stuff. Errors here would not stop or abort anything but would be a proper warning in time for when things break Rstan.
+On all merges to Math/Stan develop we would merge develop to the StanHeaders(or StanHeaders_dev) branch and run Rstan package tests and potentially other tests. Errors here would not stop or abort anything but would be a proper warning in time for when things break Rstan.
 
 ##### Proposal 7: Merge Stan Math with the Stan repository
 \
