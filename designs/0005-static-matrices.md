@@ -18,7 +18,7 @@ Currently, a differentiable matrix in Stan is represented as an Eigen matrix hol
 
 At the Stan Math level a constant matrix is a `var_value<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_value<Eigen::Matrix<double, -1, -1>>`\*.  This means that accessors for the value and adjoint of `var_value` objects can access contiguous chunks of each part of the `vari_value`. Any function that accepts a `var_value<T>` will support static matrices.
 
-At the language and level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and never reassigned to.
+At the language and compiler level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and never reassigned to.
 
 ```stan
 const matrix[N, M] A = // Construct matrix A...
@@ -37,7 +37,9 @@ Any function or operation in the stan language that can accepts a `matrix` as an
 
 This feature will be added in the following stages.
 
-1. Replace `var` and `vari` with templated types. This has already been done in the example branch [here](https://github.com/stan-dev/math/compare/feature/var-template) (see [here](https://github.com/stan-dev/math/blob/d2967fe2bf6e0d4729d67a714ef40d95d907b18b/stan/math/rev/core/vari.hpp) for the `vari_value` implementation and [here](https://github.com/stan-dev/math/blob/d2967fe2bf6e0d4729d67a714ef40d95d907b18b/stan/math/rev/core/var.hpp) for `var_value`). `var` and `vari` have been changed to `var_value<T>` and `vari_value<T>` with aliases for the current methods as `using var = var_value<double>` and `using vari = vari_value<double>`. These aliases allow for full backwards compatibility with existing upstream dependencies.
+1. Replace `var` and `vari` with templated types.
+   - This has already been done in the example branch [here](https://github.com/stan-dev/math/compare/feature/var-template) (see [here](https://github.com/stan-dev/math/pull/1877/files#diff-130c5a75cc427d7d41715e9fca8281f4R177) for the `vari_value` implementation and [here](https://github.com/stan-dev/math/pull/1877/files#diff-ab13c40c3f03b20efbba9d70d55b4dcdR34) for `var_value`). `var` and `vari` have been changed to `var_value<T>` and `vari_value<T>` with aliases for the current methods as `using var = var_value<double>` and `using vari = vari_value<double>`. These aliases allow for full backwards compatibility with existing upstream dependencies.
+   - The `vari_value` specialized for Eigen types holds two pointers of scalar arrays `val_mem_` and `adj_mem_` which are then accessed through `Eigen::Map` types `val_` and `adj_`.
 
 2. Make the stack allocator conform to accept `vari_value<T>` objects. This is done by having `vari_type<T>` inherit from a `vari_base` class and defining the [`ChainableStack`](https://github.com/stan-dev/math/blob/d2967fe2bf6e0d4729d67a714ef40d95d907b18b/stan/math/rev/core/chainablestack.hpp) as
 
@@ -45,19 +47,23 @@ This feature will be added in the following stages.
 using ChainableStack = AutodiffStackSingleton<vari_base, chainable_alloc>;
 ```
 
-3. Additional PRs for the current arithmetic operators for `var` to accept `vari_value<T>` object types.
+3. Additional PRs for the current arithmetic operators for `var` to accept `var_value<Eigen>` types.
    - Since the new operations work on matrix types, `chain()` methods of the current operators will need to be specialized for matrix, vector, and scalar inputs.
 
 4. Add additional specialized methods for constant matrices.
- - All of our current reverse mode specializations require an `Eigen::Matrix<var>`, which then assumes it needs to generate `N * M` `vari`. Specializations will need to be added for `var_type<Eigen::Matrix<var>>`
+ - All of our current reverse mode specializations require an `Eigen::Matrix<var>`, which then assumes it needs to generate `N * M` `vari`. Specializations will need to be added for `var_type<Eigen::Matrix<T>>`
 
-5. In the stanc3 compiler, support detection and substitution of `matrix/vector/row_vector` types for constant matrix types.
+5. Generalize the current autodiff testing framework to work with constant matrices.
 
-6. Create a design document for allowing type attributes in the stan language.
+6. Add specializations for `operands_and_partials`, `scalar_seq_view`, `value_of` and other helper functions needed for the distributions.
 
-7. Add a `const` type attribute to the stan language.
+7. In the stanc3 compiler, support detection and substitution of `matrix/vector/row_vector` types for constant matrix types.
 
-Steps (1) and (2) have been completed in the example branch with some work done on (3). Step (5-7) have been chosen specifically to allow more time to discuss the stan language implementation. The compiler can perform an optimization step while parsing the stan program to see if a `matrix/vector/row_vector`:
+8. Create a design document for allowing type attributes in the stan language.
+
+9. Add a `const` type attribute to the stan language.
+
+Steps (1) and (2) have been completed in the example branch with some work done on (3). Step (7-9) have been chosen specifically to allow more time to discuss the stan language implementation. The compiler can perform an optimization step while parsing the stan program to see if a `matrix/vector/row_vector`:
 
 1. Does not perform assignment after the first declaration.
 2. Uses methods that have constant matrix implementations in stan math.
@@ -126,9 +132,9 @@ Delaying release of the `const` type to the language allows for a slow buildup o
 # Drawbacks
 [drawbacks]: #drawbacks
 
-More templates can be confusing and will lead to longer compile time. The confusion of templates can be mitigated by adding additional documentation and guides for the Stan Math type system. Larger compile times can't be avoided with this implementation, though other forthcoming proposals can allow us to monitor increases in compilation times.
+More templates can be confusing and will lead to longer compile times. The confusion of templates can be mitigated by adding additional documentation and guides for the Stan Math type system. Larger compile times can't be avoided with this implementation, though other forthcoming proposals can allow us to monitor increases in compilation times.
 
-Waiting for type attributes in the Stan language means this feature will be a compiler optimization until both type attributes are allowed in the language and an agreement is made on stan language naming semantics. This is both a drawback and feature. While delaying a `constant_matrix` type as a user facing feature, it avoids the combinatorial problem that comes with additional type names for matrices proposed in the language such as `sparse` and `complex` matrices.
+Waiting for type attributes in the Stan language means this feature will be a compiler optimization until both type attributes are allowed in the language and an agreement is made on stan language naming semantics. This is both a drawback and feature. While delaying a `constant_matrix` type as a user facing feature, it avoids the combinatorial problem that comes with additional type names for matrices proposed in the language such as `sparse` and `complex`.
 
 # Prior art
 [prior-art]: #prior-art
@@ -138,6 +144,8 @@ Discussions:
  - [Static/immutable matrices w. comprehensions](https://discourse.mc-stan.org/t/static-immutable-matrices-w-comprehensions/12641)
  - [Stan SIMD and Performance](https://discourse.mc-stan.org/t/stan-simd-performance/10488/11)
  - [A New Continuation Based Autodiff By Refactoring](https://discourse.mc-stan.org/t/a-new-continuation-based-autodiff-by-refactoring/5037/2)
+
+[JAX](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#%F0%9F%94%AA-In-Place-Updates) is an autodiff library developed by google whose array type has similar constraints to the constant matrix type proposed here.
 
 [Enoki](https://github.com/mitsuba-renderer/enoki) is a very nice C++17 library for automatic differentiation which under the hood can transform their autodiff type from an arrays of structs to structs of arrays. It's pretty neat! Though implementing something like their methods would require some very large changes to the way we handle automatic differentiation.
 
