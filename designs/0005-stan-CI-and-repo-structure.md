@@ -120,6 +120,9 @@ Stage 2:
 
 Tests on merge to develop would be the same as regular tests. On request (build with parameters) we would be able run the Stage 1 test on all OS (3 tests in parallel).
 
+*UPDATE* (May 18th 2020):
+The first part of the refactor of Stan Math tests was merged. What is left to do is: remove the separate Windows job, add a new job with STAN_THREADS to stage 2 and remove the additional threading tests on merge. These should be done after the refactor of the Stan tests.
+
 ###### Stan
 
 - services/algorithms and compile tests on Linux
