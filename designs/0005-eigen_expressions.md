@@ -28,6 +28,42 @@ MatrixXd c = expr; //now it evaluates
 
 General functions must accept their arguments as templates. Which types are accepted and which are not can be restricted with requires, such as `require_eigen_t<T>`. Now these arguments can be either matrices as before or more general expressions. All functions must be updated to handle this.
 
+This is intended to require no changes in Stan lang and compiler. Here is an example:
+```
+matrix[5,5] A, B;
+matrix[5,5] C = 3 * A - 5 * B;
+```
+Variables `A`, `B` and `C` will remain of same type both in Stan Language and in compiled C++ model. The Expression `3 * A - 5 * B` will, however, be calculated more efficiently.
+
+## Example of generalizing a simple function
+Old implementation:
+```
+template <typename T1, typename T2, int R, int C>
+inline Eigen::Matrix<return_type_t<T1, T2>, R, C> add(
+    const Eigen::Matrix<T1, R, C>& m1, const Eigen::Matrix<T2, R, C>& m2) {
+  check_matching_dims("add", "m1", m1, "m2", m2);
+  return m1 + m2;
+ }
+```
+Function accepting expressions, but it still returning a matrix:
+```
+template <typename Mat1, typename Mat2,
+          typename = require_all_eigen_t<Mat1, Mat2>>
+inline auto add(const Mat1& m1, const Mat2& m2) {
+  check_matching_dims("add", "m1", m1, "m2", m2);
+  return (m1 + m2).eval();
+}
+```
+Function accepting and returning expressions:
+```
+template <typename Mat1, typename Mat2,
+          typename = require_all_eigen_t<Mat1, Mat2>>
+inline auto add(const Mat1& m1, const Mat2& m2) {
+  check_matching_dims("add", "m1", m1, "m2", m2);
+  return m1 + m2;
+}
+```
+
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
@@ -50,7 +86,9 @@ Code complexity increases. Performance affecting bugs are more likely due to som
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-- Only alternative I know of is not changing anything and still evaluatign expressions everywhere.
+The alternative is to stay with non-expression types. The downside to this is the extra time spend loading/storing matrices in simple operations.
+
+An alternative implementation would make functions accept Eigen base classes, such as `Eigen::MatrixBase<Derived>`. Functionally this makes no changes to code. However `.derived()` must be called on all arguments accepted this way when they are used. It is simlper to use requires to restrict which types are accepted by a function.
 
 # Prior art
 [prior-art]: #prior-art
@@ -60,4 +98,4 @@ Eigen does it. We also do the same with kernel generator expressions.
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-I can't think of any right now. 
+We might need some more trait metaprograms or helper functions to make working with generalized functions simpler.
