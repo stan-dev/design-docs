@@ -73,6 +73,8 @@ However, `Ref`, behaves weirdly in some situations. Namely its copy constructor 
 
 So whenever an input argument, which might be an expression is more than once in a function it should be assigned to a variable of type `to_ref_t<T>`, where `T` is a the type of input argument (or alternatively call `to_ref` on the argument). That variable should be used everywhere in the function instead of directly using the input argument.
 
+We also have to be careful that we do not make an expression returned from a function reference (matrix) variables that are local in that function (function arguments, which are not lvalue references cause the same issues). Matrices and similar expressions are referenced in expressions by reference, so when the expression is evaluated it will read memor, that could have been released or overwritten, causing wrong result or segmentation faults. A workaround to this problem has been suggested in https://github.com/stan-dev/math/issues/1775. It involves allocating such variables on heap and returning a custom Eigen operation that releases heap memory once it is destroyed.
+
 Steps to implement:
 - Generalize all functions to accept general Eigen expressions (already halfway complete at the time of writing this)
 - Test that all functions work with general expressions (this can probably be automated with a script).
