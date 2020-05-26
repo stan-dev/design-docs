@@ -15,6 +15,8 @@ I took the liberty to deviate from the typical structure of the rest of the desi
 # Current status
 [current-status]: #current-status
 
+**UPDATE**: This section describes the status of the tests at the time of opening this design docs - on May 7th.
+
 First a summary of all the tests run on Math/Stan/Cmdstan/Stanc3 repositories. Times in square brackets lists the typical run time of the listed test. If not specifically mentioned the tests are run on any operating system.
 
 In Math the following tests are run on Jenkins:
@@ -89,7 +91,9 @@ Tests files in `test/prob` are generated using the [generate_tests.cpp](https://
 
 We could improve this by grouping existing test files as in Proposal 3, but in this case this would be done in the generation phase, not after. The primary goal is to speedup the `test/prob` tests on Linux, as that is where we run the distribution tests in our CI.
 
-##### Proposal 5: Move Windows testing to the RTools 4.0 toolchain
+##### Proposal 5: Move Windows testing to the RTools 4.0 toolchain 
+\
+**UPDATE:** The move to RTools 4.0 was done on the 23rd of May 2020. Github Actions is used to test RTools 3.5 compatibility on merges to develop.
 \
 RTools 4.0 was released in April 2020 and we have already seen Stan users moving to it. This means that we should be testing with the toolchains available in RTools 4.0 to make sure everything works there. Testing both 4.0 and 3.5 is obviously not feasible, if for nothing else, due to the lack of Windows testing worker machines. But we should also not leave 3.5 users in the dark as we know many will not upgrade if not forced to.
 
