@@ -30,9 +30,30 @@ and existing Stan utilities such as `stansummary`.
 
 3. Extensibility: easy to add new commands corresponding to new services and to modify argument structure for existing commands.
 
+# Concepts
+[concepts]: #concepts
+
+## Data
+
+The interface handles the following kinds of data:
+
+ - _input data_  - the set of all variables declared in the `data` block
+ - _output data_ - the set of all variables declared in the `parameters`, `transformed parameters`, `generated quantities` blocks
+ - _output meta-data_ - information on the solver (e.g. output columns of sampler state `lp__`, `accept_stat__`)
+
+The interface cannot directly access program _runtime data_, i.e., variables declared
+in the `transformed data` block, and in local blocks.
+
+## Workflow
+
+ - model definition - write, compile a Stan program
+ - fitting the model to data - instantiate the model on the input data
+ - computation - run any of the available Stan service methods on the model
+ - analysis - check program outputs
+
+
 # Guide-level explanation: Command Syntax
 [guide-level-explanation]: #guide-level-explanation
-
 
 The first argument to the `stan` utility is either
 
@@ -151,6 +172,10 @@ services::sample::hmc_static_unit_e_adapt()
 - Maintainability
   + The current CmdStan argument parser is difficult to maintain; cf [bugfix #695](https://github.com/stan-dev/cmdstan/pull/695) which was a relatively simple code change - less than 1 day programmer effort, however the argument test framework was buggy, and demonstrating the correctness of this fix to the satisfaction of the reviewer required an additional 2 weeks of effort.
   + Use of a standard options parsing library allows Stan developers and maintainers to get answers and support from online documentation and discussions.
+
+
+
+
 
 
 ### References
