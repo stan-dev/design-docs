@@ -158,8 +158,14 @@ This builds directly on the existing ODE solver and `reduce_sum` interfaces.
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-We should decide on default tolerances.
+1. We should decide on default tolerances. It's okay if they're different
+between the CVODES and RK45 solvers.
 
-We should decide on if we want CVODES to take sensitivity variables into
+2. We should decide on if we want CVODES to take sensitivity variables into
 account when computing local errors
-(https://github.com/stan-dev/math/pull/1641#issuecomment-635562506)
+(https://github.com/stan-dev/math/pull/1641#issuecomment-635562506).
+
+3. We should decide on the naming. I'm not personally commited to `ode_bdf`
+etc. I'm fine with `integrate_ode_bdf_2` or whatnot, but that doesn't seem
+like a great name either. It's very long and the _2 is just a weird convention
+we used for the `negative_binomial` stuff.
