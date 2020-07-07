@@ -18,7 +18,7 @@ Currently, a differentiable matrix in Stan is represented as an Eigen matrix hol
 
 At the Stan Math level a constant matrix is a `var_value<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_value<Eigen::Matrix<double, -1, -1>>`\*.  This means that accessors for the value and adjoint of `var_value` objects can access contiguous chunks of each part of the `vari_value`. Any function that accepts a `var_value<T>` will support static matrices.
 
-At the language and compiler level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and never reassigned to.
+At the language and compiler level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and it's subslices are never assigned to.
 
 ```stan
 const matrix[N, M] A = // Construct matrix A...
@@ -26,10 +26,9 @@ A[10, 10] = 5; // illegal!
 A[1:10, ] = 5; // illegal!
 A[, 1:10] = 5; // illegal!
 A[1:10, 1:10] = 5; // illegal!
-A = X; // illegal!
 ```
 
-Any function or operation in the stan language that can accepts a `matrix` as an argument can also accept a constant matrix.
+Any function or operation in the stan language that can accepts a `matrix` as an argument can also accept a constant matrix. Functions which can take in multiple matrices will only return a constant matrix if all of the other matrix inputs as well as the return type are static matrices.
 
 
 # Reference-level explanation
@@ -59,11 +58,7 @@ using ChainableStack = AutodiffStackSingleton<vari_base, chainable_alloc>;
 
 7. In the stanc3 compiler, support detection and substitution of `matrix/vector/row_vector` types for constant matrix types.
 
-8. Create a design document for allowing type attributes in the stan language.
-
-9. Add a `const` type attribute to the stan language.
-
-Steps (1) and (2) have been completed in the example branch with some work done on (3). Step (7-9) have been chosen specifically to allow more time to discuss the stan language implementation. The compiler can perform an optimization step while parsing the stan program to see if a `matrix/vector/row_vector`:
+Steps (1) and (2) have been completed in the example branch with some work done on (3). Step 7 has been chosen specifically to allow more time to discuss the stan language implementation. The compiler can perform an optimization step while parsing the stan program to see if a `matrix/vector/row_vector`:
 
 1. Does not perform assignment after the first declaration.
 2. Uses methods that have constant matrix implementations in stan math.
@@ -148,20 +143,5 @@ Discussions:
 [JAX](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#%F0%9F%94%AA-In-Place-Updates) is an autodiff library developed by google whose array type has similar constraints to the constant matrix type proposed here.
 
 [Enoki](https://github.com/mitsuba-renderer/enoki) is a very nice C++17 library for automatic differentiation which under the hood can transform their autodiff type from an arrays of structs to structs of arrays. It's pretty neat! Though implementing something like their methods would require some very large changes to the way we handle automatic differentiation.
-
-# Unresolved questions
-[unresolved-questions]: #unresolved-questions
-
-- What parts of the design do you expect to resolve through the RFC process before this gets merged?
-
-Whether the staged development process listed in the reference level explanation will suffice.
-
-If the restriction on not allowing assignment to the entire matrix such as `A = X` is too restrictive.
-
-- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
-
-Any intricacies of using the GPU via `var_value<matrix_cl<double>>` should be deferred to a separate discussions or can happen during the implementation.
-
-Methods involving changing the current `matrix` type in the Stan language
 
 *Interestingly, this also means that `var_value<float>` and `var_value<long double>` can be legal.
