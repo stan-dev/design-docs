@@ -98,6 +98,12 @@ The arguments are:
 5. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right hand
   side (`f`). Can be any non-function type.
 
+The `ode_X` interfaces are actually just wrappers around the `ode_X_tol`
+interfaces with defaults for `rel_tol`, `abs_tol`, and `max_num_steps`. For
+the RK45 solver the defaults are 1e-6 for `rel_tol` and `abs_tol` and `1e6`
+for `max_num_steps`. For the BDF/Adams solvers the defaults are 1e-6 for
+`rel_tol` and `abs_tol` and `1e6` for `max_num_steps`.
+
 There are a few changes from the previous implementation.
 
 1. `theta`, `x_real`, and `x_int` are no longer broken out. All parameters,
@@ -118,8 +124,8 @@ that there can multiple output times in a row with the same value.
 The implementation of these features is relatively straightforward given the
 code from the
 [reduce_sum](https://github.com/stan-dev/design-docs/blob/master/designs/0017-reduce_sum.md)
-design doc and the existing ODE infrastructure. There is not any significant new
-technology needed.
+design doc and the existing ODE infrastructure. There is a new variadic function
+zero_adjoints function for zeroing the adjoints associated with a set of vars.
 
 The old `integrate_ode_bdf`, `integrate_ode_adams`, and `integrate_ode_rk45`
 functions should be deprecated with the introduction of these new functions.
@@ -127,12 +133,22 @@ They can remain in the code to provide compatibility to models written with the
 old interfaces. These functions can all be written to wrap around the new
 interfaces so there will not be much technical debt accrued maintaining them.
 
+The tests for the old interfaces will remain in place though (rather than
+depending entirely on the testing from the new interfaces).
+
+In the new implementation, the old BDF/Adams integrators are configured now to
+adjust their timesteps based on local error of the forward sensitivity problem.
+This is true for the `integrate_ode_X` functions too since these are just
+wrappers around the new interfaces.
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
 One drawback is that the existing ODE documentation and case studies will need
-to be updated to point at the new interfaces. The old interfaces can
-remain for backwards compatibility though.
+to be updated to point at the new interfaces. The old interfaces remain for
+backwards compatibility as wrappers around the new interfaces, but those
+interfaces wrappers come with the overhead of copying std::vectors back and
+forth to/from Eigen types.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
@@ -157,15 +173,3 @@ This builds directly on the existing ODE solver and `reduce_sum` interfaces.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
-
-1. We should decide on default tolerances. It's okay if they're different
-between the CVODES and RK45 solvers.
-
-2. We should decide on if we want CVODES to take sensitivity variables into
-account when computing local errors
-(https://github.com/stan-dev/math/pull/1641#issuecomment-635562506).
-
-3. We should decide on the naming. I'm not personally commited to `ode_bdf`
-etc. I'm fine with `integrate_ode_bdf_2` or whatnot, but that doesn't seem
-like a great name either. It's very long and the _2 is just a weird convention
-we used for the `negative_binomial` stuff.
