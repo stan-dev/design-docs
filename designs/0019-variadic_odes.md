@@ -139,7 +139,8 @@ depending entirely on the testing from the new interfaces).
 In the new implementation, the old BDF/Adams integrators are configured now to
 adjust their timesteps based on local error of the forward sensitivity problem.
 This is true for the `integrate_ode_X` functions too since these are just
-wrappers around the new interfaces.
+wrappers around the new interfaces. It seemed to help the Adams solver in an
+example.
 
 # Drawbacks
 [drawbacks]: #drawbacks
