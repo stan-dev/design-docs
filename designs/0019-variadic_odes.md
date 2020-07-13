@@ -100,8 +100,8 @@ The arguments are:
 The `ode_X` interfaces are actually just wrappers around the `ode_X_tol`
 interfaces with defaults for `rel_tol`, `abs_tol`, and `max_num_steps`. For
 the RK45 solver the defaults are 1e-6 for `rel_tol` and `abs_tol` and `1e6`
-for `max_num_steps`. For the BDF/Adams solvers the defaults are 1e-6 for
-`rel_tol` and `abs_tol` and `1e6` for `max_num_steps`.
+for `max_num_steps`. For the BDF/Adams solvers the defaults are 1e-10 for
+`rel_tol` and `abs_tol` and `1e8` for `max_num_steps`.
 
 There are a few changes from the previous implementation.
 
