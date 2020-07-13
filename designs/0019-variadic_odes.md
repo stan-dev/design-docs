@@ -27,10 +27,9 @@ This design introduces six new functions:
 `ode_adams`, `ode_adams_tol`,
 `ode_rk45`, `ode_rk45_tol`
 
-The solvers in the first columns have default tolerance settings (yet to be
-decided). The solvers in the second column accept an argument for relative
-tolerance, absolute tolerance, and maximum number of steps to take between
-output times.
+The solvers in the first columns have default tolerance settings. The solvers in
+the second column accept arguments for relative tolerance, absolute tolerance,
+and the maximum number of steps to take between output times.
 
 This is different from the current solvers where tolerances are presented
 as overloads to the same function name. With the variadic argument this isn't
