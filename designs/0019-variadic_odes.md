@@ -32,16 +32,16 @@ the second column accept arguments for relative tolerance, absolute tolerance,
 and the maximum number of steps to take between output times.
 
 This is different from the current solvers where tolerances are presented
-as overloads to the same function name. With the variadic argument this isn't
+as overloads to the same function. With the variadic argument this isn't
 possible anymore so the function with tolerances is broken out separately.
 
-The proposed `ode_bdf` interface is (the interfaces for `ode_adams` and
+The proposed `ode_bdf` solver interface is (the interfaces for `ode_adams` and
 `ode_rk45` are the same):
 
 ```
 vector[] ode_bdf(F f,
                  vector y0,
-                 real t0, rea[] times,
+                 real t0, real[] times,
                  T1 arg1, T2 arg2, ...)
 ```
 
@@ -49,10 +49,11 @@ The arguments are:
 1. ```f``` - User-defined right hand side of the ODE (`dy/dt = f`)
 2. ```y0``` - Initial state of the ode solve (`y0 = y(t0)`)
 3. ```t0``` - Initial time of the ode solve
-4. ```times``` - Sorted arary of times to which the ode will be solved (each
+4. ```times``` - Sorted array of times to which the ode will be solved (each
   element must be greater than t0)
-5. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right hand
-  side (`f`). Can be any non-function type.
+5. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
+hand side. The types ```T1, T2, ...``` can be any type, but they must match
+the types of the matching arguments of ```f```.
 
 In this proposal, the user-defined ODE right hand side interface is:
 
@@ -62,10 +63,10 @@ vector f(real t, vector y, T1 arg1, T2 arg2, ...)
 
 The arguments are:
 1. ```t``` - Time at which to evaluate the ODE right hand side
-2. ```y``` - State a which to evaluate the ODE right hand side
-3. ```arg1, arg2, ...``` - Arguments pass unmodified from the `ode_bdf` call.
-  The types `T1`, `T2`, etc. need to match between this function and the
-  `ode_bdf` call.
+2. ```y``` - State at which to evaluate the ODE right hand side
+3. ```arg1, arg2, ...``` - Arguments passed unmodified from the ODE solve
+function call. The types ```T1, T2, ...``` must match the types of the
+arguments in the corresponding ODE solve function call.
 
 The ODE right hand side returns `dy/dt` as a `vector`.
 
@@ -94,8 +95,9 @@ The arguments are:
 6. ```abs_tol``` - Absolute tolerance for solve (data)
 7. ```max_num_steps``` - Maximum number of timesteps to take in integrating
   the ODE solution between output time points (data)
-5. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right hand
-  side (`f`). Can be any non-function type.
+5. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
+hand side. The types ```T1, T2, ...``` can be any type, but they must match
+the types of the matching arguments of ```f```.
 
 The `ode_X` interfaces are actually just wrappers around the `ode_X_tol`
 interfaces with defaults for `rel_tol`, `abs_tol`, and `max_num_steps`. For
