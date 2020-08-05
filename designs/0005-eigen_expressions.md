@@ -73,12 +73,14 @@ However, `Ref`, behaves weirdly in some situations. Namely its copy constructor 
 
 So whenever an input argument, which might be an expression is more than once in a function it should be assigned to a variable of type `to_ref_t<T>`, where `T` is a the type of input argument (or alternatively call `to_ref` on the argument). That variable should be used everywhere in the function instead of directly using the input argument.
 
-We also have to be careful that we do not make an expression returned from a function reference (matrix) variables that are local in that function (function arguments, which are not lvalue references cause the same issues). Matrices and similar expressions are referenced in expressions by reference, so when the expression is evaluated it will read memor, that could have been released or overwritten, causing wrong result or segmentation faults. A workaround to this problem has been suggested in https://github.com/stan-dev/math/issues/1775. It involves allocating such variables on heap and returning a custom Eigen operation that releases heap memory once it is destroyed.
+We also have to be careful that we do not make an expression returned from a function reference (matrix) variables that are local in that function (function arguments, which are not lvalue references cause the same issues). Matrices and similar expressions are referenced in expressions by reference, so when the expression is evaluated it will read memory, that could have been released or overwritten, causing wrong result or segmentation faults. A workaround to this problem has been suggested in https://github.com/stan-dev/math/issues/1775. It involves allocating such variables on heap and returning a custom Eigen operation that releases heap memory once it is destroyed.
 
 Steps to implement:
 - Generalize all functions to accept general Eigen expressions (already halfway complete at the time of writing this)
-- Test that all functions work with general expressions (this can probably be automated with a script).
+- Test that all functions work with general expressions (done in https://github.com/stan-dev/math/pull/1980).
 - Make functions return Eigen expressions wherever it makes sense to do so. (This is for the functions that are exposed to Stan language. Other function can return expresions earlier.)
+
+Tests are implemented as a python script that generates tests for all functions exposed in stanc3. They reside in math repository, but are run on Jenkins as a part of stan repository tests. The reason for this is that failures can come from either math(changed function) or stanc3(newly exposed function). Changes in both math and stanc3 repos also run tests from stan, but changes in stanc3 do not run tests from meath. The tests are documented here: https://github.com/stan-dev/stan/wiki/Testing:-Unit-Tests#6-expression-testing-framework. 
 
 # Drawbacks
 [drawbacks]: #drawbacks
