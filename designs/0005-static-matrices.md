@@ -6,29 +6,39 @@
 # Summary
 [summary]: #summary
 
-This proposes a constant matrix type in stan that will allow for significant performance opportunities. In Stan Math this will be represented by `var<Eigen::Matrix<double, R, C>>` or `var<matrix_cl<double>>`. The implementation will be fully backwards compatible with current Stan code. With optimizations from the compiler the conditions for a `matrix` to be a constant matrix can be detected and applied to Stan programs automatically for users. The implementation of this proposal suggests a staged approach where a stan language level feature is delayed until type attributes are allowed in the language and constant matrices have support for the same set of methods that the current `matrix` type has.
+This proposes a constant matrix type in stan that will allow for significant performance opportunities. In Stan Math this will be represented by `var_value<Eigen::Matrix<double, R, C>>` or `var_value<matrix_cl<double>>`. The implementation will be fully backwards compatible with current Stan code. With optimizations from the compiler the conditions for a `matrix` to be a constant matrix can be detected and applied to Stan programs automatically for users. The implementation of this proposal suggests a staged approach where a stan language level feature is delayed until type attributes are allowed in the language and constant matrices have support for the same set of methods that the current `matrix` type has.
 
 # Motivation
 [motivation]: #motivation
 
-Currently, a differentiable matrix in Stan is represented as an Eigen matrix holding a pointer to an underlying array of autodiff objects, each of those holding a pointer to the underlying autodiff object implementation. These `N*M` autodiff elements are expensive but necessary so the elements of a matrix can be assigned to without copying the entire matrix. However, in instances where the matrix is treated as a whole object such that underlying subsets of the matrix are never assigned to, we can store one autodiff object representing the entire matrix. See [here](https://github.com/stan-dev/design-docs/pull/21#issuecomment-625352581) for performance tests on a small subset of gradient evaluations using matrices vs. constant matrices.
+Currently, an `NxM` matrix in Stan is represented as an Eigen matrix holding a pointer to an underlying array of autodiff objects, each of those holding a pointer to the underlying autodiff object implementation. These `N*M` autodiff elements are expensive but necessary so the elements of a matrix can be assigned to without copying the entire matrix. However, in instances where the matrix is treated as a whole object such that underlying subsets of the matrix are never assigned to, we can store one autodiff object representing the entire matrix. See [here](https://github.com/stan-dev/design-docs/pull/21#issuecomment-625352581) for performance tests on a small subset of gradient evaluations using matrices vs. constant matrices.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-At the Stan Math level a constant matrix is a `var_value<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_value<Eigen::Matrix<double, -1, -1>>`\*.  This means that accessors for the value and adjoint of `var_value` objects can access contiguous chunks of each part of the `vari_value`. Any function that accepts a `var_value<T>` will support static matrices.
+At the Stan Math level a constant matrix is a `var_value<Eigen::Matrix<double, -1, -1>>` with an underlying pointer to a `vari_value<Eigen::Matrix<double, -1, -1>>`\*.  The value and adjoint of the matrix are stored separately in memory pointed to by the `vari_value`. Functions that currently support `Eigen::Matrix<var, R, C>` types will be extended to support `var_value<Eigen>` types
 
-At the language and compiler level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and it's subslices are never assigned to.
+At compiler level, a `matrix` can be substituted for a constant matrix if the matrix is only constructed once and it's subslices are never assigned to.
 
 ```stan
-const matrix[N, M] A = // Construct matrix A...
-A[10, 10] = 5; // illegal!
-A[1:10, ] = 5; // illegal!
-A[, 1:10] = 5; // illegal!
-A[1:10, 1:10] = 5; // illegal!
+matrix[N, M] A = // Construct matrix A...
+A[10, 10] = 5; // Will be dynamic!
+A[1:10, ] = 5; // Will be dynamic!
+A[, 1:10] = 5; // Will be dynamic!
+A[1:10, 1:10] = 5; // Will be dynamic!
 ```
 
-Any function or operation in the stan language that can accepts a `matrix` as an argument can also accept a constant matrix. Functions which can take in multiple matrices will only return a constant matrix if all of the other matrix inputs as well as the return type are static matrices.
+However extracting subslices from a matrix will still allow it to be constant.
+
+```stan
+matrix[N, M] A = // Construct matrix A...
+real b = A[10, 10]; // Will be real
+matrix[10, M] C = A[1:10, ]; // Will be static!
+row_vector[10] D = A[, 1:10]; // Will be static!
+matrix[10, 10] F = A[1:10, 1:10]; // Will be static!
+```
+
+Any function or operation in the Stan language that can accepts a `matrix` as an argument can also accept a constant matrix. Functions which can take in multiple matrices will only return a constant matrix if all of the other matrix inputs as well as the return type are static matrices.
 
 
 # Reference-level explanation
@@ -37,16 +47,16 @@ Any function or operation in the stan language that can accepts a `matrix` as an
 This feature will be added in the following stages.
 
 1. Replace `var` and `vari` with templated types.
-   - This has already been done in the example branch [here](https://github.com/stan-dev/math/compare/feature/var-template) (see [here](https://github.com/stan-dev/math/pull/1877/files#diff-130c5a75cc427d7d41715e9fca8281f4R177) for the `vari_value` implementation and [here](https://github.com/stan-dev/math/pull/1877/files#diff-ab13c40c3f03b20efbba9d70d55b4dcdR34) for `var_value`). `var` and `vari` have been changed to `var_value<T>` and `vari_value<T>` with aliases for the current methods as `using var = var_value<double>` and `using vari = vari_value<double>`. These aliases allow for full backwards compatibility with existing upstream dependencies.
+   - This has already been done in PR [#1915](https://github.com/stan-dev/math/pull/1915). `var` and `vari` have been changed to `var_value<T>` and `vari_value<T>` with aliases for the current methods as `using var = var_value<double>` and `using vari = vari_value<double>`. These aliases allow for full backwards compatibility with existing upstream dependencies.
+
+2. Add `var_value` and `vari_value` Eigen specializations
+   - This has been done in PR [#1952](https://github.com/stan-dev/math/pull/1952)
    - The `vari_value` specialized for Eigen types holds two pointers of scalar arrays `val_mem_` and `adj_mem_` which are then accessed through `Eigen::Map` types `val_` and `adj_`.
 
-2. Make the stack allocator conform to accept `vari_value<T>` objects. This is done by having `vari_type<T>` inherit from a `vari_base` class and defining the [`ChainableStack`](https://github.com/stan-dev/math/blob/d2967fe2bf6e0d4729d67a714ef40d95d907b18b/stan/math/rev/core/chainablestack.hpp) as
+3. Update `adj_jac_apply` to work with constant matrices.
+   - An example of this exists in [#1928](https://github.com/stan-dev/math/pull/1928). Using `adj_jac_apply` will provide a standardized and efficient API for adding new reverse mode functions for constant matrices.
 
-```cpp
-using ChainableStack = AutodiffStackSingleton<vari_base, chainable_alloc>;
-```
-
-3. Additional PRs for the current arithmetic operators for `var` to accept `var_value<Eigen>` types.
+4. Additional PRs for the current arithmetic operators for `var` to accept `var_value<Eigen>` types.
    - Since the new operations work on matrix types, `chain()` methods of the current operators will need to be specialized for matrix, vector, and scalar inputs.
 
 4. Add additional specialized methods for constant matrices.
@@ -99,25 +109,25 @@ This could be rewritten in brms to do the assignment of `mu` on one line. And be
 
 ```stan
 parameters {
-  const vector[Kc] b;  // population-level effects
+  vector[Kc] b;  // population-level effects
   // temporary intercept for centered predictors
   real Intercept;
   real<lower=0> sigma;  // residual SD
-  const vector<lower=0>[M_1] sd_1;  // group-level standard deviations
-  const matrix[M_1, N_1] z_1;  // standardized group-level effects
+  vector<lower=0>[M_1] sd_1;  // group-level standard deviations
+  matrix[M_1, N_1] z_1;  // standardized group-level effects
   // cholesky factor of correlation matrix
-  const cholesky_factor_corr[M_1] L_1;
+  cholesky_factor_corr[M_1] L_1;
 }
 transformed parameters {
   // actual group-level effects
-  const matrix[N_1, M_1] r_1 = (diag_pre_multiply(sd_1, L_1) * z_1)';
+  matrix[N_1, M_1] r_1 = (diag_pre_multiply(sd_1, L_1) * z_1)';
   // using vectors speeds up indexing in loops
-  const vector[N_1] r_1_1 = r_1[, 1];
-  const vector[N_1] r_1_2 = r_1[, 2];
+  vector[N_1] r_1_1 = r_1[, 1];
+  vector[N_1] r_1_2 = r_1[, 2];
 }
 model {
   // predictor terms
-  const vector[N] mu = Intercept + Xc * b + r_1_1[J_1] .* Z_1_1 + r_1_2[J_1] * Z_1_2;
+  vector[N] mu = Intercept + Xc * b + r_1_1[J_1] .* Z_1_1 + r_1_2[J_1] * Z_1_2;
   // more stuff
 ```
 
@@ -130,6 +140,17 @@ Delaying release of the `const` type to the language allows for a slow buildup o
 More templates can be confusing and will lead to longer compile times. The confusion of templates can be mitigated by adding additional documentation and guides for the Stan Math type system. Larger compile times can't be avoided with this implementation, though other forthcoming proposals can allow us to monitor increases in compilation times.
 
 Waiting for type attributes in the Stan language means this feature will be a compiler optimization until both type attributes are allowed in the language and an agreement is made on stan language naming semantics. This is both a drawback and feature. While delaying a `constant_matrix` type as a user facing feature, it avoids the combinatorial problem that comes with additional type names for matrices proposed in the language such as `sparse` and `complex`.
+
+One large consideration is the need for the use of `flto` by compilers in order to not have a performance regression for ODE models because of missed divirtualization from the compiler. All vari created in stan are tracked and stored as pointers in our autodiff reverse mode tape `ChainableStack`. The underlying implementation of `ChainableStack` requires the use of an `std::vector` which is a homogeneous container. so all `vari_value<T>` must inherit from a `vari_base` that is then used as the type for the reverse mode tape in `ChainableStack` as a `std::vector<vari_base*>`. Because of the different underlying structures of each `vari_value<T>` the method `set_zero_adjoint()` of the `vari_value<T>` specializations must be `virtual` so that when calling the reverse pass over the tape via the `vari_base*` we call the proper `set_zero_adjoint()` member function for each type. But because Stan's autodiff tape is a global object, compilers will not devirtualize these function calls unless the compiler can optimize over the entire program (see [here](https://stackoverflow.com/questions/48906338/why-cant-gcc-devirtualize-this-function-call) for more info and a godbolt example).
+
+Multiple other methods were attempted such as
+1. boost::variants instead of polymorphism
+  - This still leads to a lookup from a function table which causes similar problems to the virtual table lookup
+2. A different stack for every vari_base subclass
+3.  Don't use the chaining stack for zeroing. Instead of having a chaining/non-chaining stack have a chaining/zeroing stack. Everything goes in the zeroing stack. Only chaining things go in the chaining stack.
+  - Both (2) and (3) also lead to performance problems because of having to allocate memory on multiple stacks
+
+ The ODE models are particularly effected by this because of the multiple calls to `set_zero_adjoint()` that are used in the ODE solvers. This means that upstream packages will need to suggest (or automatically apply) the `-flto` flag to Stan programs so that these function calls can be devirtualized.
 
 # Prior art
 [prior-art]: #prior-art
