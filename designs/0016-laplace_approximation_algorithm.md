@@ -12,9 +12,8 @@ form of approximate inference.
 # Motivation
 [motivation]: #motivation
 
-I have a Stan model that is too slow to sample. I would like to do something
-better than optimization. Laplace approximations are a pretty standard way
-of doing this.
+Laplace approximations are quick to compute. If a model can be fit with a Laplace
+approximation, that will probably be much faster than running full hmc.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -33,7 +32,7 @@ where `jac(g, u)` is the Jacobian of the function `g` at `u`. In the Laplace
 approximation, we search for a mode (a maximum) of ```log(p(u))```. Call this
 `u_mode`. This is not the same optimization that is done in the `optimizing`
 algorithm. That searches for a mode of `log(p(g(u)))` (or the equation above
-without the `log(det(jac(g, u)))` term. This is different.
+without the `log(det(jac(g, u)))` term). This is different.
 
 We can form a second order Taylor expansion of `log(p(u))` around `u_mode`:
 
@@ -44,10 +43,10 @@ log(p(u)) = log(p(u_mode))
           + O(||u - u_mode||^3)  
 ```
 
-where `gradient(log(p), u)` is the gradient of `log(p)` at `u` and
-`hessian(log(p), u)` is the hessian of `log(p)` at `u`. Because the gradient
-is zero at the mode, the linear term drops out. Ignoring the third order
-terms gives us a new distribution `p_approx(u)`:
+where `gradient(log(p), u_mode)` is the gradient of `log(p(u))` at `u_mode` and
+`hessian(log(p), u_mode)` is the hessian of `log(p(u))` at `u_mode`. Because the
+gradient is zero at the mode, the linear term drops out. Ignoring the third
+order terms gives us a new distribution `p_approx(u)`:
 
 ```
 log(p_approx(u)) = K + 0.5 * (u - u_mode)^T * hessian(log(p), u_mode) * (u - u_mode)
@@ -59,9 +58,10 @@ where K is a constant to make this normalize. `u_approx` (`u` sampled from
 u_approx ~ N(u_mode, -(hessian(log(p), u_mode))^{-1})
 ```
 
-Taking draws from `u_approx` gives us draws from our distribution on Stan's
-unconstrained space. Once constrained, these draws can be used in the same
-way that regular draws from the `sampling` algorithm are used.
+Taking draws from `u_approx` gives us draws from the distribution on the
+unconstrained space. Once constrained (via the transform `g(u)`), these draws
+can be used in the same way that regular draws from the `sampling` algorithm
+are used.
 
 The `laplace` algorithm would take in the same arguments as the `optimize`
 algorithm plus two additional ones:
@@ -79,7 +79,7 @@ A model can be called by:
 ./model laplace num_samples=100 data file=data.dat
 ```
 
-or with the diagonal:
+or with a small value added to the diagonal:
 ```
 ./model laplace num_samples=100 add_diag=1e-10 data file=data.dat
 ```
@@ -92,7 +92,10 @@ The three algorithm specific parameters are:
 1. ```log_p__``` - The log density of the model itself
 2. ```log_g__``` - The log density of the Laplace approximation
 3. ```rejected__``` - A boolean data indicating whether it was possible to
-  evaluate the log density of the model at this parameter value
+evaluate the log density of the model at this parameter value
+
+Reporting both the model and approximate log density allows for importance
+sampling diagnostics to be applied to the model.
 
 For instance, the new output might look like:
 
@@ -106,15 +109,24 @@ log_p__, log_g__, rejected__, b.1,b.2
 -3, -4, 1, 0, 0
 ```
 
+There are two additional diagnostics for the `laplace` approximation. The
+`log_p__` and `log_q__` outputs can be used to do the Pareto-k
+diagnostic from "Pareto Smoothed Importance Sampling" (Vehtari, 2015).
+
+There could also be a diagnostic printout for how many times it is not
+possible to evaluate the log density of the model at a certain point from the
+approximate posterior (this would indicate the approximation is likely
+questionable).
+
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
 The implementation of this would borrow heavily from the optimization code. The
 difference would be that the Jacobian would be turned on for the optimization.
 
-We will also need to implement a way of computing Hessians with finite
-differences of gradients. Simple finite differences were not sufficiently
-accurate for an example I was working on.
+The Hessians should be computed using finite differences of reverse mode autodiff.
+Higher order autodiff isn't possible for general Stan models, but finite differences
+of reverse mode autodiff should be more stable than second order finite differences.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -137,24 +149,9 @@ lengths of their outputs (they may compute incorrect standard errors, etc).
 print zeros where usually the parameters would be.
 
 If the user does not check the `rejected__` column, then they will be using a
-bunch of zeros in their follow-up calculations that could mislead them.
-
-Similarly to divergent transitions, we can print to the output information about
-how many draws were rejected in any case.
-
-In the earlier part of the design document I assume #3 was implemented, but I
-think #2 might be better.
-
-# Rationale and alternatives
-[rationale-and-alternatives]: #rationale-and-alternatives
-
-An alternative that seems appealing at first is printing out the mode and
-hessian so that it would be possible for people to make their own posterior
-draws. This is not reasonable because the conversion from unconstrained to
-constrained space is not exposed in all of the interfaces.
+bunch of zeros in their follow-up calculations that could be misleading.
 
 # Prior art
 [prior-art]: #prior-art
 
-This is a pretty common Bayesian approximation. It just is not implemented in
-Stan.
+This is a common Bayesian approximation. It just is not implemented in Stan.
