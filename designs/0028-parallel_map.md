@@ -24,7 +24,7 @@ for (int i = 0; i < 10000; ++i) {
 }
 ```
 
-There are two key components to parallelising this loop via ```parallel_map```: an indexing function and an computation/application function.
+There are two key components to parallelising this loop via ```parallel_map```: an indexing function and a computation/application function.
 
 ## Index Function
 The indexing function is the workhorse of the framework, as it allows ```parallel_map``` to manipulate only the variables that are needed by a given thread. This is in contrast to ```reduce_sum```, which will only 'slice' one argument and copy the rest in full to all threads. For the above loop we want to loop over both arguments (```a``` and ```b```), this means that the indexing function will be:
@@ -34,7 +34,7 @@ auto index_fun = [&](int i, const auto& fun, const auto& x, const auto& y) {
 };
 ```
 
-As you can see, this approach allows for a great deal of flexibility in the indexing of arguments. For example, if in the loop above, ```a``` was a vector of size 10000, and ```b``` was a scalar to broadcast to each element of ```a```, the indexing function would instead be:
+As you can see, this approach allows for a great deal of flexibility in the indexing of arguments. For example, if in the loop above ```a``` was a vector of size 10000 and ```b``` was a scalar to broadcast to each element of ```a```, the indexing function would instead be:
 ```
 auto index_fun = [&](int i, const auto& fun, const auto& x, const auto& y) {
   return fun(x[i], y);
@@ -56,7 +56,7 @@ auto index_fun = [&](int i, int j, const auto& fun, const auto& x, const auto& y
 ```
 
 ## Apply Function
-Returning to the original loop, once the indexing function has been specified, the next step is to specify the function to be applied to the indexed arguments. This function should be specified assuming that the arguments have already been indexed (i.e., assuming that the inputs are scalars, rather than vectors/matrices that need to be indexed). For the above loop, this function would be:
+Returning to the original loop, once the indexing function has been specified the next step is to specify the function to be applied to the indexed arguments. This function should be specified assuming that the arguments have already been indexed (i.e., assuming that the inputs are scalars, rather than vectors/matrices that need to be indexed). For the above loop, this function would be:
 
 ```
 auto app_fun = [&](const auto& x, const auto& y) {
@@ -124,6 +124,6 @@ This framework is similar to (and heavily inspired by) ```reduce_sum```, as both
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- Should we change the name from ```parallel_map```? Sebastian raised the point that we don't preface any other parallel functionality with "parallel"
+- Should we change the name from ```parallel_map```? Sebastian raised the point that we don't prefix any other parallel functionality with "parallel"
 - Is it going to be feasible to handle the index function in Stan? In c++ this needs to have an ```auto``` return type so that it can be used for copying ```varis```, ```vars```, and applying the computation function. How will this work with Stan where a return type needs to be specified for functions?
 - Any other ideas for improving performance and usability are also very welcome
