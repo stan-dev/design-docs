@@ -198,7 +198,7 @@ The initial `varmat` implementation of this model achieves a per-gradient speedu
 Now that `varmat` variables can be assigned, it is possible that the compiler silently replace every
 `matvar` in Stan with a `varmat`, and none of the standard Stan use cases would be affected.
 
-There are four major implementation strategies available at the Stanc3 level.
+There are at least three major implementation strategies available at the Stanc3 level.
 
 1. Implement a new Stan type to let the user choose explicitly between `matvar` and `varmat` types
 
@@ -207,7 +207,8 @@ There are four major implementation strategies available at the Stanc3 level.
 3. Use `varmat` types by default, but if variable assignment is detected, or a `varmat` is used
 in an unsupported function convert to and from `matvar` automatically.
 
-4. Use `varmat` types everywhere
+This list is not exhaustive, and if there are other attractive language implementation options,
+it can be revised.
 
 The original proposal was leaning towards #1 because it most naturally corresponds to the Math
 implementation. However, this leaves the problem of explicitly declaring `varmat` to the user. This
@@ -232,11 +233,7 @@ parts of the calculation can still try to take advantage of `varmat` types. The 
 is compiler implementation which would need to be more advanced to detect when it could use
 `varmat` and when it would need to convert to `matvar`.
 
-The advantage of #4 is simplicitly of use and simplicitly of compiler implementation. If `varmat`
-types are used everywhere, and there is no attempt to balance against the advantages of
-`varmat` against `matvar`, then the main difficulty will just be making sure to convert `varmat`
-variables to `matvar` variables and back again when used in functions that do not support `varmat`.
-In the limit that all functions can be written to support `varmat`, then #2, #3, and #4 become
+In the limit that all functions can be written to support `varmat`, then #2 and #3 become
 equivalent.
 
 # Prior art
