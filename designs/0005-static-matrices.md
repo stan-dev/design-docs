@@ -49,23 +49,26 @@ The motivation for introducing the `varmat` type is speed. These types speed up
 computations in a number of ways:
 
 1. The values in a `varmat` are stored separately from the `adjoints` and can
-be accessed independently. In a `matvar` the values and adjoints are interleaved
-With how caching and memory loads work on modern desktop CPUs, reading the values
-requires reading the values and the adjoints (reading an 8-byte double from memory
-loads data around it as well).
+be accessed independently. In a `matvar` the values and adjoints are interleaved,
+and each value/adjoint pair can be stored in a different place in memory.
+Reading a value or adjoint in a `matvar` requires dereferencing a pointer to
+where the value/adjoint pair is stored and then accessing them. Because of how
+caches and memory work on modern CPUs, even if only the value or adjoint are
+needed, both will be loaded.
 
-2. Reading all `N x M` values or adjoints of a `varmat` requires one pointer
-dereference and `N x M` double reads. Reading a similar `matvar` requires
-`N x M` pointer dereferences and `N x M` reads.
+2. Reading all `N x M` values and adjoints of a `varmat` requires one pointer
+dereference and `2 x N x M` double reads. Reading the values and adjoints
+of a similar `matvar` requires `N x M` pointer dereferences and `2 x N x M` reads.
 
 3. Memory is linear in `varmat`, and in the best case interleaved in `matvar`
 (though because every element is a pointer, in worse case `matvar` memory accesses
-are entirely random). The linear memory in `varmat` means that they can vectorized
-CPU instructions.
+are entirely random). The linear memory in `varmat` means that they can use
+vectorized CPU instructions.
 
-4. `varmat` is a more suitable datastructure for autodiff variables on a GPU
+4. `varmat` is a more suitable data structure for autodiff variables on a GPU
 than `matvar` because the memory difficulties with pointer-chasing and strided
-accesses are more acute on GPUs than CPUs.
+accesses are more acute on GPUs than CPUs. Linear memory also helps make the
+communication between the CPU and GPU efficient.
 
 5. Because values and adjoints of a `varmat` are each stored in one place, only
 two arena allocations are required to build an `N x M` matrix. `matvar` requires
@@ -130,17 +133,17 @@ conversions and any accidental slowdowns this may lead to. Everything written fo
 `matvar`. The `matvar` types are still available for general purpose autodiff.
 
 Testing `varmat` autodiff types for different functions is done by including a
-`stan::test::test_ad_`varmat`(...)` mixed mode autodiff test along with every
+`stan::test::test_ad_matvar(...)` mixed mode autodiff test along with every
 `stan::test::test_ad(...)` test. The tests for `log_determinant`, available
 [here](https://github.com/stan-dev/math/blob/develop/test/unit/math/mix/fun/log_determinant_test.cpp)
 are typical of what is done.
 
-`test_ad_`varmat`` checks that the values and Jacobian of a function autodiff'd with
+`test_ad_matvar` checks that the values and Jacobian of a function autodiff'd with
 `varmat` and `matvar` types behaves the same (and also that the functions throw
-errors in the same places). `test_ad_`varmat`` is not included by default in `test_ad`
+errors in the same places). `test_ad_varmat` is not included by default in `test_ad`
 because not all functions support `varmat` autodiff.
 
-`test_ad_`varmat`` also checks return type conventions. For performance, it is assume
+`test_ad_varmat` also checks return type conventions. For performance, it is assume
 a function takes in a mix of `varmat` and `matvar` types should also return a `varmat`.
 
 A complete list of `varmat` functions is planned for the compiler implementation.
@@ -185,7 +188,7 @@ At this point, the Math maturing to the point that it is possible to compile a m
 `varmat`s values with a development version of the Stanc3 compiler (available
 [here](https://github.com/stan-dev/stanc3/pull/755), though it may take some effort to run since
 it is a work in progress). This Stanc3 compiler defines any variable with a name ending in
-`_`varmat`` to use a `varmat` type.
+`_varmat` to use a `varmat` type.
 
 A basic bernoulli MRP model with five population level covariates and seven group terms is available
 [here](https://github.com/bbbales2/computations_in_glms/blob/master/benchmark_model/mrp_`varmat`.stan).
@@ -197,9 +200,9 @@ Now that `varmat` variables can be assigned, it is possible that the compiler si
 
 There are four major implementation strategies available at the Stanc3 level.
 
-1. Implement a new Stan type to differentiate explicitly between `matvar` and `varmat` types
+1. Implement a new Stan type to let the user choose explicitly between `matvar` and `varmat` types
 
-2. Use `matvar` types for any function in the Stan program that does not support `varmat`
+2. Use `matvar` types if there is at least one function in the Stan program that does not support `varmat`
 
 3. Use `varmat` types by default, but if variable assignment is detected, or a `varmat` is used
 in an unsupported function convert to and from `matvar` automatically.
@@ -207,13 +210,13 @@ in an unsupported function convert to and from `matvar` automatically.
 4. Use `varmat` types everywhere
 
 The original proposal was leaning towards #1 because it most naturally corresponds to the Math
-implementation. However, this leaves the problem of explicitly declaring `varmat` to the user. To
-avoid duplicating the user's manual and function reference for `varmat` and `matvar` functions, there
-would also need to be some automatic, under the hood conversions between the types. This automatic
-converting would make it so that if a `varmat` is forgotten anywhere, the entire program will be
-slowed down. This sort of explicit typing shouldn't be too much of a problem in development models
-or generated Stan code, but in large, user-written models this would be error prone to implement
-and maintain.
+implementation. However, this leaves the problem of explicitly declaring `varmat` to the user. This
+creates a problem two for functions defined to take matrix, vector, or row vector types. Would
+they all work with `varmat`? If not, the list of functions in Stan will get much longer to contain
+all the functions that support `varmat` and combinations of `varmat` and `matvar` arguments.
+Similarly the user's manual and function guide would get longer as well. If there is some
+under the hood conversion between `varmat` and `matvar` so that all functions do work with either
+type, then that leads to the question, why have the different types at all?
 
 The advantage of #2 is that it would allow programs that can be written using only `varmat` functions
 to be very fast (and not even worry about any conversion to `matvar` or not). The problem with this
@@ -245,7 +248,7 @@ Discussions:
  - [Stan SIMD and Performance](https://discourse.mc-stan.org/t/stan-simd-performance/10488/11)
  - [A New Continuation Based Autodiff By Refactoring](https://discourse.mc-stan.org/t/a-new-continuation-based-autodiff-by-refactoring/5037/2)
 
-[JAX](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#%F0%9F%94%AA-In-Place-Updates) is an autodiff library developed by Google whose array type has similar constraints to the constant matrix type proposed here.
+[JAX](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#%F0%9F%94%AA-In-Place-Updates) is an autodiff library developed by Google whose array type is similar to what is here.
 
 [Enoki](https://github.com/mitsuba-renderer/enoki) is a very nice C++17 library for automatic differentiation which under the hood can transform their autodiff type from an arrays of structs to structs of arrays.
 
