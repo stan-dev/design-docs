@@ -39,12 +39,12 @@ value and adjoint. In terms of data, the basic var and vari implementation look
 like:
 
 ```cpp
-class vari {
+struct vari {
   double value_;
   double adjoint_;
 };
 
-class var {
+struct var {
   vari* vi_; // pointer to implementation
 }
 ```
@@ -54,13 +54,13 @@ the `double` type is replaced with a template type `T`:
 
 ```cpp
 template <typename T>
-class vari {
+struct vari {
   T value_;
   T adjoint_;
 };
 
 template <typename T>
-class var_value<T> {
+struct var_value<T> {
   vari_value<T>* vi_; // pointer to implementation
 }
 ```
@@ -68,9 +68,26 @@ class var_value<T> {
 Currently, Stan implements matrices using
 `Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` variables. Internally,
 an `N x M` `Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` is a
-pointer to `N x M` vars on the heap. Because vars are themselves just pointers
-to varis, the current Stan matrix class is represented internally as a pointer
-to pointers.
+pointer to `N x M` vars on the heap. The storage of an
+`Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` is equivalent to the
+following:
+
+```cpp
+struct DenseStorage {
+  var* var_data_;
+};
+```
+
+Because vars are themselves just pointers to varis, this can be simplified
+to the more direct form:
+
+```cpp
+struct DenseStorage {
+  vari** vari_data_;
+};
+```
+
+So current Stan matrix class is represented internally as a pointer to pointers.
 
 When Stan performs an operation on a matrix it will typically need
 to read all of the values of the matrix at least once on the forward autodiff
@@ -89,8 +106,8 @@ one for its adjoints. Filling in the templates, the storage of a
 ```cpp
 template <>
 class vari_value<Eigen::MatrixXd> {
-  Eigen::MatrixXd value_;
-  Eigen::MatrixXd adjoint_;
+  Eigen::MatrixXd value_;    // The real implementation is done with Eigen::Map
+  Eigen::MatrixXd adjoint_;  // types to avoid memory leaks
 }
 
 template <>
@@ -99,9 +116,10 @@ class var_value<Eigen::MatrixXd> {
 };
 ```
 
-The full, contiguous matrices of values or adjoints can be accessed with only
-one pointer dereference, eliminating the two prime inefficiences of the
-`Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` implementation.
+The full, contiguous matrices of values or adjoints can be accessed without
+pointer chasing on every element of the matrix, eliminating the two prime
+inefficiences of the `Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>`
+implementation.
 
 As an example, of how this is more efficient, consider the reverse pass
 portion of the matrix operation, `C = A * B`. If the values and adjoints
