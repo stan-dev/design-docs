@@ -8,11 +8,12 @@
 
 This proposes two things:
 
-1. A generalization of the C++ reverse mode autodiff type in Stan Math, from `stan::math::var`
-to `stan::math::var_value<T>`, where `T` is the underlying storage type of the autodiff
-variable. For `T == double`, this type is equivalent to the current Stan Math `var` type.
-The usefulness of the generalized reverse mode autodiff type comes from passing more
-general data structures as the template type, in particular the Eigen Matrix types.
+1. Adding a template argument to Stan's C++ reverse mode autodiff type
+to allow autodiff variables to have different types of internal storage, for instance
+a `double` or an `Eigen::MatrixXd` or something else. Using Eigen matrices as the
+internal storage would allow matrices in the Stan language to have a much nicer memory
+layout which then also generates more performant programs. This scheme can be fully
+backwards compatible with current Stan code.
 
 2. A design for exposing these autodiff variables at the Stan language level
 
@@ -25,30 +26,120 @@ For the rest of this proposal, "autodiff" means "reverse mode autodiff," and all
 are assumed to reside in the `stan::math` namespace. The necessary namespace will be
 included if this is not true.
 
-# Motivation
-[motivation]: #motivation
+# New Reverse Mode Autodiff Type
+[newtype]: #newtype
 
-Currently, an `N x M` matrix in Stan is represented as an Eigen matrix holding
-a pointer to an underlying array of autodiff objects, each of those holding
-a pointer to the underlying autodiff object implementation.
+The new autodiff type is `stan::math::var_value<T>`, where `T` is the underlying
+storage type of the autodiff variable. For `T == double`, this type is
+equivalent to the current `stan::math::var` type.
 
-The basic Eigen type used by Stan is `Eigen::Matrix<var, R, C>`. For brevity,
-this will be referred to as a `matvar` type (a matrix containing var variables).
-There are no major differences between a matrix of vars or a vector of vars or
-a row vector of vars.
+A `stan::math::var` in Stan is a PIMPL (pointer to implementation) object. It is
+a pointer to a `stan::math::vari`, which is an object that holds the actual
+value and adjoint. In terms of data, the basic var and vari implementation look
+like:
+
+```cpp
+class vari {
+  double value_;
+  double adjoint_;
+};
+
+class var {
+  vari* vi_; // pointer to implementation
+}
+```
+
+The new, templated `var_value<T>` and `vari_value<T>` are very similar except
+the `double` type is replaced with a template type `T`:
+
+```cpp
+template <typename T>
+class vari {
+  T value_;
+  T adjoint_;
+};
+
+template <typename T>
+class var_value<T> {
+  vari_value<T>* vi_; // pointer to implementation
+}
+```
+
+Currently, Stan implements matrices using
+`Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` variables. Internally,
+an `N x M` `Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` is a
+pointer to `N x M` vars on the heap. Because vars are themselves just pointers
+to varis, the current Stan matrix class is represented internally as a pointer
+to pointers.
+
+When Stan performs an operation on a matrix it will typically need
+to read all of the values of the matrix at least once on the forward autodiff
+pass and then update all the adjoints at least once on the reverse autodiff
+pass. This can be slow because the pointer chasing required to read a pointer to
+pointers data structure is expensive. The can be wasteful because fetching just
+the values or adjoints ends up loading both the values and adjoints into cache
+(since they are stored beside each other). Stan vectors and row vectors are
+implemented similarly and present the same problems.
 
 This proposal will enable an `N x M` Stan matrix to be defined in terms of one
 autodiff object with two separate `N x M` containers, one for its values and
-one for its adjoints.
+one for its adjoints. Filling in the templates, the storage of a
+`var_value<Eigen::MatrixXd>` is effectively:
 
-This basic example of this type is `var_value<Eigen::MatrixXd>`. For brevity,
-these will be referred to as `varmat` types (a var that contains a matrix). Again,
-there are no major differences when the matrix is replaced by a vector or a row vector.
+```cpp
+template <>
+class vari_value<Eigen::MatrixXd> {
+  Eigen::MatrixXd value_;
+  Eigen::MatrixXd adjoint_;
+}
+
+template <>
+class var_value<Eigen::MatrixXd> {
+  vari_value<Eigen::MatrixXd>* vi_; // pointer to implementation
+};
+```
+
+The full, contiguous matrices of values or adjoints can be accessed with only
+one pointer dereference, eliminating the two prime inefficiences of the
+`Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` implementation.
+
+As an example, of how this is more efficient, consider the reverse pass
+portion of the matrix operation, `C = A * B`. If the values and adjoints
+of the respective variables are accessed with `.val()` and `.adj()`
+respectively, this can be written as follows:
+
+```cpp
+A.adj() += result.adj() * B.val().transpose();
+B.adj() += A.val().transpose() * result.adj();
+```
+
+Even though on each line only the values or the adjoints of any single variable
+are needed, with an `Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>`
+implementation, the values and adjoints of all three variables will be loaded
+into memory. Because of the pointer chasing, the compiler will not be able to
+take advantage of SIMD instructions.
+
+Switching to a `var_value<Eigen::MatrixXd>`, this is no longer the case. The
+values and adjoints can be accessed and updated independently, and because the
+memory is contiguous the compiler can take advantage of SIMD instruction
+sets.
+
+## Recap and Summary of New Type
+
+From this point forward, the existing
+`Eigen::Matrix<var, Eigen::Dynamic, Eigen::Dynamic>` types will be referred to
+as a `matvar` types (because the implementation is a matrix of vars).
+Similarly, the Eigen Matrix of vars implementation of Stan vector and row
+vector types are also `matvar` types.
+
+The replacement types will be referred to as `varmat` types and include,
+among others, the `var_value<Eigen::MatrixXd>` type introduced thus far.
+The replacement implementation of vector and row vector are also `varmat` types.
 
 The motivation for introducing the `varmat` type is speed. These types speed up
 computations in a number of ways:
 
-1. The values in a `varmat` are stored separately from the `adjoints` and can
+1. The values in a `varmat` are stored separately from the adjoints and can
 be accessed independently. In a `matvar` the values and adjoints are interleaved,
 and each value/adjoint pair can be stored in a different place in memory.
 Reading a value or adjoint in a `matvar` requires dereferencing a pointer to
@@ -90,16 +181,16 @@ can be done by writing a new pointer over an old pointer. Assigning elements to 
 can be done, but it requires either matrix copies (slow, and not implemented), or
 adding extra functions on the reverse pass callback stack (implemented and discussed later)
 
-# Math Implementation
+# Math Implementation and Testing
 [math-implementation]: #math-implementation
 
 At this point versions of `var_value<T>` types have been implemented for `T` being an
 Eigen dense type, an Eigen sparse type, a limited number of Eigen expressions, a double,
-or a `matrix_cl`, a matrix with data stored on an OpenCL device (targetting GPUs).
+or a `matrix_cl` which is matrix with data stored on an OpenCL device (targeting GPUs).
 
-As var previously, `var_value<T>` is a PIMPL (pointer to implementation) type. The
+As before, `var_value<T>` is a PIMPL (pointer to implementation) type. The
 implementation of `var_value<T>` is held in `vari_value<T>`, and the only data a
-`var_value<T>` holders is a pointer to a `vari_value<T>` object.
+`var_value<T>` holds is a pointer to a `vari_value<T>` object.
 
 The old `var` and `vari` types are now typdef aliases to `var_value<double>` and
 `vari_value<double>` respectively. All `vari_value<T>` types inherit from `vari_base`,
@@ -140,10 +231,10 @@ are typical of what is done.
 
 `test_ad_matvar` checks that the values and Jacobian of a function autodiff'd with
 `varmat` and `matvar` types behaves the same (and also that the functions throw
-errors in the same places). `test_ad_varmat` is not included by default in `test_ad`
+errors in the same places). `test_ad_matvar` is not included by default in `test_ad`
 because not all functions support `varmat` autodiff.
 
-`test_ad_varmat` also checks return type conventions. For performance, it is assume
+`test_ad_matvar` also checks return type conventions. For performance, it is assume
 a function takes in a mix of `varmat` and `matvar` types should also return a `varmat`.
 
 A complete list of `varmat` functions is planned for the compiler implementation.
@@ -156,13 +247,10 @@ https://github.com/stan-dev/math/issues/2101 . A pull request
 ## Assigning a `varmat`
 
 A limitation from the original design doc that is no longer necessary is the limitation
-that subsets of `varmat` variables cannot be assigned efficiently.
-
-The efficiency loss was so great in the original design (requiring a copy of the entire
-`varmat`) that this idea was discarded completely.
-
-There is a strategy available now to assign to subsets of `varmat` variables that is
-more efficient than this.
+that subsets of `varmat` variables cannot be assigned efficiently. The efficiency loss
+was so great in the original design (requiring a copy of the entire `varmat`) that this
+idea was discarded completely. There is a strategy available now to assign to subsets
+of `varmat` variables that is more efficient than this.
 
 The idea is that when part of a `varmat` is assigned to, the values in that part of the
 `varmat` are saved into the memory arena before being overwritten, and a call is pushed
@@ -247,6 +335,9 @@ Discussions:
 
 [JAX](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#%F0%9F%94%AA-In-Place-Updates) is an autodiff library developed by Google whose array type is similar to what is here.
 
-[Enoki](https://github.com/mitsuba-renderer/enoki) is a very nice C++17 library for automatic differentiation which under the hood can transform their autodiff type from an arrays of structs to structs of arrays.
+[Enoki](https://github.com/mitsuba-renderer/enoki) is a very nice C++17 library
+for automatic differentiation which under the hood can transform their autodiff
+type from an arrays of structs to structs of arrays.
 
-[FastAD](https://github.com/JamesYang007/FastAD) very fast C++ autodiff taking advantage of expressions, matrix autodiff types, and a static execution graph.
+[FastAD](https://github.com/JamesYang007/FastAD) very fast C++ autodiff taking
+advantage of expressions, matrix autodiff types, and a static execution graph.
