@@ -210,27 +210,63 @@ As before, `var_value<T>` is a PIMPL (pointer to implementation) type. The
 implementation of `var_value<T>` is held in `vari_value<T>`, and the only data a
 `var_value<T>` holds is a pointer to a `vari_value<T>` object.
 
-The old `var` and `vari` types are now typdef aliases to `var_value<double>` and
+The old `var` and `vari` types are now typedef aliases to `var_value<double>` and
 `vari_value<double>` respectively. All `vari_value<T>` types inherit from `vari_base`,
 which is a new type used in the autodiff stacks (there are no changes there other than
 swapping `vari_base` in for `vari`).
 
-For implementation of `vari_value<T>` where `T` is an Eigen dense type (the basic `varmat`),
-look [here](https://github.com/stan-dev/math/blob/develop/stan/math/rev/core/vari.hpp#L604)
+`var_value<T>` and `vari_value<T>` types are meant to be implemented with template
+specializations. There is no expectation that `var_value<T>` will work in a generic
+case.
 
-For implementation of `vari_value<T>` where `T` is an Eigen expression, look
-[here](https://github.com/stan-dev/math/blob/develop/stan/math/rev/core/vari.hpp#L546). The
-Eigen expressions implemented are ones that can be implemented as views into another matrix.
-So blocks of matrices, matrix transpose, column-wise access, etc. are supported.
+For every `var_value<T>` that is defined, `vari_value<T>` must also be defined, and
+`vari_value<T>` must inherit from the abstract class `vari_base` (since the autodiff
+stacks now work via `vari_base` pointers). It is not true, however, that everything
+that inherits from `vari_base` should be a `vari_value<T>`, or that for every
+`vari_value<T>` there should be a `var_value<T>`.
 
-For implementation of `vari_value<T>` where `T = double` (the reimplementation of var),
-look [here](https://github.com/stan-dev/math/blob/develop/stan/math/rev/core/vari.hpp#L81)
+`vari_base` is an abstract class that defines the interface by which everything
+interacts with the autodiff stacks, and interaction with these stacks is how
+everything that inherits from `vari_base` should be understdood. `vari_base` has
+two pure virtual functions, `void chain()`, and `void set_zero_adjoint()`.
 
-For implementation of `vari_value<T>` where `T` is an OpenCL type, look
-[here](https://github.com/stan-dev/math/blob/develop/stan/math/opencl/rev/vari.hpp#L23)
+There are three autodiff stacks in Stan, all which hold pointers to `vari_base`
+objects:
 
-For implmementation of `vari_value<T>` where `T` is an Eigen sparse type, look
-[here](https://github.com/stan-dev/math/blob/develop/stan/math/rev/core/vari.hpp#L746)
+1. The chaining autodiff stack
+2. The non-chaining autodiff stack
+3. The delete-ing autodiff stack
+
+Instances of classes which inherit from `vari_base` can allocate themselves on
+these stacks. Which stack an instance puts itself on depends on the requirements of
+that instance. If the instance will need its `chain` function called in the
+reverse pass, it must go on the first stack. If it does not, it goes on the second
+stack. An instance should not go on both stacks. If the instance stores adjoints,
+it should go on the first or second stack (both will call `set_zero_adjoint()` at
+the appropriate time). If the instance needs a destructor called, it should go
+on the third stack. An instance can go in either the first or second stack as
+well as the third stack (the third stack is not mutually exclusive with the first
+two).
+
+The lifetime of the instances should be the lifetime of the stacks. The arena
+memory allocated for any stack will be cleaned up when the stacks are. Unless an
+instance of a class inheriting from `vari_base` is put on the third stack, it
+should not require its destructor to be called.
+
+The only extra requirement on a `vari_value<T>` (on top of the requirements of being
+a `vari_base` child class) is that it defines `val_` and `adj_` member variables of
+an appropriate storage type. This does not need to match `T`. For instance, with
+`vari_value<Eigen::MatrixXd>`, the underlying storage types are actually modified
+`Eigen::Map` types.
+
+The only extra requirement on a `var_value<T>` is that it contains one member
+variable, a pointer to a `vari_value<T>`.
+
+There are really not any other univeral requirements on `var_value<T>` or
+`vari_value<T>` types. If they have common member variables like
+`vari_value<T>::value_type`, `vari_value<T>::size`, or `vari_value<T>::val` that
+make the type work more easily with the rest of the autodiff library, but nothing
+is guaranteed.
 
 ## Use and Testing in Functions
 
@@ -286,61 +322,76 @@ variables.
 # Stanc3 implementation
 [stanc3-implementation]: #stanc3-implementation
 
-The language implementation of `varmat` is yet undefined. It was left unresolved because
-enough was clear from the initial discussions of how to handle the Math implementation
-regardless of how the language was handled.
+With the current `var_value<T>` implementation in `stan-dev/math` and
+`stan-dev/stan` it is possible to compile a Stan model using `varmat`
+variables with a development version of the Stanc3 compiler (available
+[here](https://github.com/stan-dev/stanc3/pull/755), though it may
+take some effort to run since it is a work in progress). This Stanc3 compiler
+defines any variable with a name ending in `_varmat` to use the appropriate
+`var_value<Eigen::Matrix<double, R, C>>` type (`R` and `C` are different if
+these are vector or row vector or matrix types).
 
-At this point, the Math maturing to the point that it is possible to compile a model using
-`varmat`s values with a development version of the Stanc3 compiler (available
-[here](https://github.com/stan-dev/stanc3/pull/755), though it may take some effort to run since
-it is a work in progress). This Stanc3 compiler defines any variable with a name ending in
-`_varmat` to use a `varmat` type.
-
-A basic bernoulli MRP model with five population level covariates and seven group terms is available
+A basic bernoulli MRP model with five population level covariates and seven
+group terms is available
 [here](https://github.com/bbbales2/computations_in_glms/blob/master/benchmark_model/mrp_`varmat`.stan).
 
-The initial `varmat` implementation of this model achieves a per-gradient speedup of around two.
+The initial `varmat` implementation of this model achieves a per-gradient
+speedup of around two over a basic implementation using `matvar` types.
 
-Now that `varmat` variables can be assigned, it is possible that the compiler silently replace every
-`matvar` in Stan with a `varmat`, and none of the standard Stan use cases would be affected.
+Now that `varmat` variables can be assigned, it is possible that the compiler
+silently replace every `matvar` in Stan with a `varmat`, and silently convert
+`varmat` variables to `matvar` variables when function signatures are only
+available for `matvar` types. The problem with this is that converting between
+`varmat` and `matvar` variables is not a cheap operation. There are also
+certain `varmat` operations that are simply slower than their `matvar` counterparts.
 
-There are at least three major implementation strategies available at the Stanc3 level.
+For instance, the simple act of assigning a `var_value<Eigen::MatrixXd>`
+entry requires pushing an operation onto the reverse pass
+stack, whereas assignment in `matvar` means overwriting a pointer.
 
-1. Implement a new Stan type to let the user choose explicitly between `matvar` and `varmat` types
+There are also conditionally faster operations. For OpenCL functions, it is
+often faster to compute on the OpenCL device if the memory is already copied,
+but faster to compute on the host device if it is not.
 
-2. Use `matvar` types if there is at least one function in the Stan program that does not support `varmat`
+With this in mind, the proposal is to build a Stanc3 that inspects how matrices
+are used and automatically decides if they should be `varmat` or `matvar`
+types, and convert where necessary between types.
 
-3. Use `varmat` types by default, but if variable assignment is detected, or a `varmat` is used
-in an unsupported function convert to and from `matvar` automatically.
+The proposed heuristics are:
 
-This list is not exhaustive, and if there are other attractive language implementation options,
-it can be revised.
+1. Assume, if nothing else, that `matrix`, `vector`, and `row_vector` types be
+implemented with `varmat` types
 
-The original proposal was leaning towards #1 because it most naturally corresponds to the Math
-implementation. However, this leaves the problem of explicitly declaring `varmat` to the user. This
-creates a problem two for functions defined to take matrix, vector, or row vector types. Would
-they all work with `varmat`? If not, the list of functions in Stan will get much longer to contain
-all the functions that support `varmat` and combinations of `varmat` and `matvar` arguments.
-Similarly the user's manual and function guide would get longer as well. If there is some
-under the hood conversion between `varmat` and `matvar` so that all functions do work with either
-type, then that leads to the question, why have the different types at all?
+2. If a matrix is read or written with single indices, switch to `matvar`
 
-The advantage of #2 is that it would allow programs that can be written using only `varmat` functions
-to be very fast (and not even worry about any conversion to `matvar` or not). The problem with this
-implementation is that, the difference between `varmat` and `matvar` would again need documented
-at the user level and some notation would need added to the user manual to indicate if a function
-is or is not available for optimization.
+3. If a matrix is use only in functions with `matvar` support, use `matvar`
 
-The advantage of #3, similarly to #2, is that `varmat` and `matvar` types could be handled
-automatically by the compiler. If the user requires functions only available for `matvar`,
-there will be some slowdown as conversions between `varmat` and `matvar` are handled. However,
-if the conversions are only used in relatively cheap parts of the computation, then the expensive
-parts of the calculation can still try to take advantage of `varmat` types. The difficulty here
-is compiler implementation which would need to be more advanced to detect when it could use
-`varmat` and when it would need to convert to `matvar`.
+With regards to user-defined functions X
 
-In the limit that all functions can be written to support `varmat`, then #2 and #3 become
-equivalent.
+In the limit that all functions can be written to support `varmat`, then
+`matvar` will not be used.
+
+# Original (rejected) Stanc3 Design
+[original-stanc3-design]: #original-stanc3-design
+
+The original proposal was that `varmat` variables would be explicitly typed, for
+instance the Stan type `whole_matrix` instead of `matrix` would indicate that
+the compiler should use a `var_value<Eigen::MatrixXd>` type. The control this
+gives the user to optimize how their program is written is alluring, but this
+creates the problem that either:
+
+1. all functions written to support `varmat` types are documented explicitly
+as such, and users are responsible for looking up which functions support the
+`varmat` types and which do not,
+
+2. or the compiler automatically convert `varmat` functions to `matvar` functions
+when necessary to ensure compatibility with the new types.
+
+Option #1 would be difficult to maintain and difficult for users to keep up
+with. Option #2 is clearly simpler from a documentation perspective. However,
+if #2 is implemented and the compiler is automatically casting between different
+matrix types, which begs the question that maybe the compiler could do a
+a pretty good job picking which matrix types to use.
 
 # Prior art
 [prior-art]: #prior-art
