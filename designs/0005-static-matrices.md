@@ -1,6 +1,6 @@
 - Feature Name: static_matrices
 - Start Date: April 30th, 2020
-- RFC PR: [Example Branch](https://github.com/stan-dev/math/compare/feature/var-template)
+- RFC PR: 
 - Stan Issue: [#1805](https://github.com/stan-dev/math/issues/1805)
 
 # Summary
@@ -360,8 +360,9 @@ would be decided the same way.
 The algorithm for figuring out the underlying matrix types for these variables
 is as follows:
 
-1. Define all user-defined functions only for `matvar` types, and all
-internally defined variables and returned variables are `matvar` types as well.
+1. Define all user-defined functions only for `matvar` types. Define all local
+variables in user-defined functions and all returned variables to have `matvar`
+types as well.
 
 2. Assume every named and unnamed matrix variable in the `parameters`,
 `transformed parameters` and `model` blocks use `varmat` types
@@ -375,7 +376,10 @@ variable.
 5. If a `matvar` matrix variable is assigned to a second matrix variable,
 the second is made to be a `matvar` variable.
 
-6. Repeat steps 3-6 until the types of every variable in the program do not
+6. If the result of a function is assigned to a `matvar` matrix variable,
+all the inputs to that function are made to be `matvar` as well.
+
+7. Repeat steps 3-6 until the types of every variable in the program do not
 change any more.
 
 It is already possible to determine, given function name and a set of argument
