@@ -26,7 +26,7 @@ Examples of cases where evaluating is very useful: evaluating paralleliziation a
 # Profiling on the Stan model level
 [stan-model-profiling]: #stan-model-profiling
 
-A user defines profiling sections inside a model by writing `profile("profile-section-name");`. The argument to `profile()` is always a string literal. A profile will measure execution time and other AD information for all expressions in the Stan lines where the profile is in scope.
+A user defines profiling sections inside a model by writing `profile("profile-section-name");`. The argument to `profile()` is always a string literal. A profile will measure execution time and other AD information for all expressions for the Stan lines for which the profile is in scope.
 
 An model with examples of its usage is shown below:
 
@@ -103,17 +103,51 @@ The C++ code generated from Stan models will be changed accordingly:
 
 - all generated C++ models representing Stan models will gain a private member `profiles__`. This member will represent the map of all profile information.
 
+- C++ calls to profile will be generated as:
 
-- C++ call
+```cpp
+profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
+```
+where X will be replaced by a unique number. The `const_cast` is required because log_prob and other model functions are const.
 
-
-# The CmdStan interface
-
-- printing after finishing
-- `profiling_file = filename.csv`
+- at the end of the generated C++ representing the transformed parameters, a call to a function that stops active profiles in the transformed parameters is placed if profile() is used in the transformed parameters block. This is required because the transformed parameters block does not translate to a separate block in C++ as variables defined in transformed parameters are used in other blocks and we can thus not rely on the profile going out of scope.
 
 # The Stan Math implementation
 
+The Stan Math implementation is centered around the profile C++ class:
+```cpp
+template <typename T>
+class profile {
+  std::string name_;
+  profile_map* profiles_;
+
+ public:
+  profile(std::string name, profile_map& profiles)
+      : name_(name), profiles_(&profiles) {
+    internal::profile_start<T>(name_, *profiles_);
+  }
+
+  ~profile() { internal::profile_stop<T>(name_, *profiles_); }
+};
+```
+
+In case of `T = var`, the constructor calls the `profile_start` function that places the start `var` on the AD tape. The destructor places the stop `var` on the AD tape. In case of `T = double` no `var` is placed in either calls. This is used for profiling in transformed data, generated quantities blocks and other cases where `log_prob` is called with `T__`, that is when the gradient of the `log_prob` is not required.
+
+
+`profile_start()` starts the timers for the forward pass and stores AD meta information required to profile the sub-expression, for example the number of elements on the AD tape. It also sets up the reverse callback that stops the reverse pass timers.
+
+`profile_stop()` stops the timers for the forward pass and calculates the differences for the AD meta information, the difference of the number of elements on the AD tape recorder in profile_stop and profile_start is the number of elements placed on the AD tape in the subexpression we are profiling. It also starts the timers for reverse callback.
+
+# The CmdStan interface
+
+- After the fitting in cmdstan finishes, the profiling information is printed to stdout:
+
+profile_name,total_time,fwd_time,rev_time,ad_tape
+bernoulli GLM,0.0409984,0.000453154,10
+normal_lpdf alpha,0.00238057,0.000497744,1
+normal_lpdf beta,0.00349398,0.0005345,1
+
+- If the argument `profiling_file = filename.csv` is provided, the information is stored in a separate CSV and not printed to stdout.
 
 # Disadvantages of this approach
 [Disadvantages]: #Disadvantages
@@ -167,7 +201,7 @@ profile("profile-name") {
 function_call();
 ```
 
-- have profiling be a separate service of Stan, similar to how diagnose is implemented. The drawback of this is that the user profiles their model in a different setting, with one set of parameter values at a time.
+- have profiling be a separate service of Stan, similar to how diagnose is implemented
 
 # Prior art
 [prior-art]: #prior-art
