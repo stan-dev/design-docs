@@ -83,7 +83,7 @@ different blocks record in the same place.
 `profile` can be used to measure the expense of different parts of a loop or
 branches of a conditional statement).
 
-5. Timing statements can be nested, but they must be different.
+5. Timing statements can be nested, but they must have different names.
 
 6. A timing statement cannot be recursively entered
 
@@ -200,135 +200,164 @@ Because only parameter declaration statements are allowed in the `parameters`
 block, `profile` cannot be used there. This means that the `lower`, `upper`,
 `multiply` and `offset` constraints/transforms can not be profiled.
 
+# The Stan Math implementation
+
+The `profile` functionality in Stan is implemented two functions, `profile_start`
+and `profile_stop` which handle intrumenting the code. A C++ `std::map` is to
+store the accumulated timing results of each profile by name.
+
+The two functions `profile_start` and `profile_stop` are implemented with the
+signatures:
+
+```
+template <typename T>
+inline void profile_start(std::string name, profile_map& profiles);
+template <typename T>
+inline void profile_stop(std::string name, profile_map& profiles);
+```
+
+The first argument is the profile name, and the second argument is the map
+in which to store timing results.
+
+`profile_start` starts a timer for the given profile name and
+`profile_stop` stops the timer and saves the accumulated time in the profile.
+
+It is an error if `profile_start` is called with the same name twice before
+a `profile_stop` is called.
+
+If the template argument `T` is a `var`, then `profile_start` and
+`profile_stop` push varis onto the chaining autodiff stack. On the reverse
+pass, the vari produced by `profile_stop` starts a timer and the vari
+produced by `profile_start` stops it and records the results. In this way
+the forward and reverse pass calculations can both be timed.
+`profile_start` and `profile_stop` also record the number of varis on
+the chaining and non-chaining stacks.
+
+If the template argument `T` is arithmetic, then `profile_start` and
+`profile_stop` only record timing information. They do not push any
+varis onto the chaining autodiff stack or record information about the
+number of varis on the chaining and non-chaining autodiff stacks.
+
+A helper profile class is used to wrap `profile_start` and `profile_stop`
+with RAII semantics to make it easier to use.
+
 # Stanc3 - changes to the generated C++
 
 The C++ code generated from Stan models will be changed accordingly:
 
-- all generated C++ models representing Stan models will gain a private member `profiles__`. This member will represent the map of all profile information.
+- All generated C++ models representing Stan models will gain a private member
+`profiles__`. This member will represent the map of all profile information.
 
 - C++ calls to profile will be generated as:
 
-```cpp
-profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
-```
-where X will be replaced by a unique number. The `const_cast` is required because log_prob and other model functions are const.
+    ```cpp
+    profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
+    ```
 
-- at the end of the generated C++ representing the transformed parameters, a call to a function that stops active profiles in the transformed parameters is placed if profile() is used in the transformed parameters block. This is required because the transformed parameters block does not translate to a separate block in C++ as variables defined in transformed parameters are used in other blocks and we can thus not rely on the profile going out of scope.
+    where X will be replaced by a unique number. The `const_cast` is required
+    because log_prob and other model functions are const.
 
-# The Stan Math implementation
-
-The Stan Math implementation is centered around the profile C++ class:
-```cpp
-template <typename T>
-class profile {
-  std::string name_;
-  profile_map* profiles_;
-
- public:
-  profile(std::string name, profile_map& profiles)
-      : name_(name), profiles_(&profiles) {
-    internal::profile_start<T>(name_, *profiles_);
-  }
-
-  ~profile() { internal::profile_stop<T>(name_, *profiles_); }
-};
-```
-
-In case of `T = var`, the constructor calls the `profile_start` function that places the start `var` on the AD tape. The destructor places the stop `var` on the AD tape. In case of `T = double` no `var` is placed in either calls. This is used for profiling in transformed data, generated quantities blocks and other cases where `log_prob` is called with `T__`, that is when the gradient of the `log_prob` is not required.
-
-
-`profile_start()` starts the timers for the forward pass and stores AD meta information required to profile the sub-expression, for example the number of elements on the AD tape. It also sets up the reverse callback that stops the reverse pass timers.
-
-`profile_stop()` stops the timers for the forward pass and calculates the differences for the AD meta information, the difference of the number of elements on the AD tape recorder in profile_stop and profile_start is the number of elements placed on the AD tape in the subexpression we are profiling. It also starts the timers for reverse callback.
+- The `transformed parameters` block in Stan does not translate directly to a C++
+block, so the RAII profile class does not stop the timers correctly. Instead
+all the timers are stopped manually.
 
 # The CmdStan interface
 
 - After the fitting in cmdstan finishes, the profiling information is printed to stdout:
 
-profile_name,total_time,fwd_time,rev_time,ad_tape
-bernoulli GLM,0.0409984,0.000453154,10
-normal_lpdf alpha,0.00238057,0.000497744,1
-normal_lpdf beta,0.00349398,0.0005345,1
+profile_name,n_calls,total_time,fwd_time,rev_time,chaining_varis,non_chaining_varis
+bernoulli GLM,1234,0.0409984,0.000453154,10,0
+normal_lpdf alpha,1234,0.00238057,0.000497744,1,100
+normal_lpdf beta,1234,0.00349398,0.0005345,1,100
 
-- If the argument `profiling_file = filename.csv` is provided, the information is stored in a separate CSV and not printed to stdout.
+- If the argument `profiling_file = filename.csv` is provided, the information is stored
+in a separate CSV and not printed to stdout.
 
 # Disadvantages of this approach
 [Disadvantages]: #Disadvantages
 
 The shortcomings of this approach are: 
 
-- we can not profile transforms of the parameters defined in the parameters block
+- Profiling in recursive functions is not allowed.
 
-We could allow `profile()` to be the only accepted function call in the parameters block, if we decide we want to support this as well, though that is a significant change to the language rules.
+- Though timers can be nested, they do not report their results as such (the
+nesting has to be understood and intepreted from the results manually)
 
-- profiling in recursive functions is limited. The following function would result in a runtime error.
-```stan
-real fun(real a) {
-  profile("recursive-fun");
-  real b;
-  if (a < 1.0) {
-    b = fun(a - 1);
-  } else {
-    b = 1.0;
-  }
-  return b;
-}
-```
+- There is no separation between warmup and non-warmup timing (for sampling
+or ADVI)
+
+- We can not profile transforms of the parameters defined in the parameters
+block
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-There are many possible alternatives to this design. Listing some of which came up in the current discusions:
+There are many possible alternatives to this design. Listing some of which came
+up in the current discusions:
 
-- profile every line of a Stan model automatically
+- Profile every line of a Stan model automatically. The downside of this is the
+profiling overhead is large compared to some Stan statements.
 
-- profile every block inside a Stan program automatically (top-level blocks as well as inner blocks). Label profiles based on line numbers.
+- Profile every block inside a Stan program automatically (top-level blocks as
+well as inner blocks). It is fairly easy to add profile statements where they
+are needed manually, so this seemed unnecessary even if it is occasionally
+handy.
 
-- use other Stan language interfaces. Examples:
+- There were a variety of other Stan interfaces that were proposed. The current
+one was chosen for simplicity.
 
-```stan
-start_profiling("profile-name");
-function_call();
-stop_profiling("profile-name");
+    Manual start stops are more verbose and require the start stop string to match
+    exactly (or it is an error):
 
-profile("profile-name") {
-  function_call();
-}
+    ```stan
+    start_profiling("profile-name");
+    function_call();
+    stop_profiling("profile-name");
+    ```
 
-@profile("profile-name");
-{
-  function_call();
-}
+    Special profile block statements are unnecessarily verbose because the
+    profile can just go on the inside of an already existing block:
 
-@profile("profile-name");
-function_call();
-```
+    ```stan
+    profile("profile-name") {
+      function_call();
+    }
+    ```
 
-- have profiling be a separate service of Stan, similar to how diagnose is implemented
+    Decorators for blocks or function calls would be a new syntax for, which
+    seemed unnecessary:
+
+    ````
+    @profile("profile-name");
+    {
+      function_call();
+    }
+
+    @profile("profile-name");
+    function_call();
+    ```
+
+- There are ways to generate profiling information that can further be analyzed
+by external visualization tools like
+[Chrome Tracing](https://aras-p.info/blog/2017/01/23/Chrome-Tracing-as-Profiler-Frontend/).
+This was not implemented.
 
 # Prior art
 [prior-art]: #prior-art
 
-There is no Stan-specific priort art for profiling. For other tools we have the following:
+There is no Stan-specific priort art for profiling. For other tools we have the
+following:
 
-- TensorFlow based tools: https://www.tensorflow.org/guide/profiler with TensorBoard for visualization
+- TensorFlow based tools: https://www.tensorflow.org/guide/profiler with
+TensorBoard for visualization
+
 - PyMC3: https://docs.pymc.io/notebooks/profiling.html
+
 - PyTorch: https://pytorch.org/tutorials/recipes/recipes/profiler.html
-- Pyro: to the best of my knowledge Pyro relies on cPython for profiling. Most profiling information found with regards to Pyro is for their internal function/distribution-level testing and CI.
 
-The Python-based tools mostly suggest using cPython for profiling the low-level functions.
+- Pyro: to the best of my knowledge Pyro relies on cPython for profiling. Most
+profiling information found with regards to Pyro is for their internal
+function/distribution-level testing and CI.
 
-# Unresolved questions
-[unresolved-questions]: #unresolved-questions
- - in case of no `profile()` calls, do we want to omit the private member `profiles__` representing an empty `std::map`? 
-
- - how to stop profiles at the end of transformed parameters? Explicit calls to profile destructors or looping over active profiles and adding a stop var?
-
- - do we want to split profiling information for different stages of a Stan algorithm (warmup/sampling in MCMC, adaptation/sampling in ADVI)?
-
- - do we want profiling information for all gradient evaluations in CSV or other forms?
-
- - do we want to group labels automatically by Stan block? My inclination here is no, as it limits the users freedom.
-
- - do we want to provide a way to print out the profiling info in a "standard" format that can be used in visualization tools like [Chrome Tracing](https://aras-p.info/blog/2017/01/23/Chrome-Tracing-as-Profiler-Frontend/)?
-
+The Python-based tools mostly suggest using cPython for profiling the low-level
+functions.
