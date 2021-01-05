@@ -1,50 +1,98 @@
 - *Feature Name:* profiling-stan-AD
-- *Start Date:* NA
+- *Start Date:* 1-4-2020
 - *RFC PR(S):*
 - *Stan Issue(s):*
 
 # Summary
 [summary]: #summary
 
-The goal of this design is a clean and simple interface to profiling Stan models. Specfically, profiling single nodes and subexpressions of the autodiff (AD) expression graph for the model and transformed parameters blocks and function evaluation for the generated quantities and transformed data blocks.
+The goal of this is design is to make it easier to optimize Stan model performance
+by to measuring how computationally expensive different parts of a model are with
+a profiling interface.
 
 # Motivation
 [motivation]: #motivation
 
-1. identifying bottlenecks in a Stan model
+Two motivations for a profiling interface are:
 
-Currently, identifying bottlenecks requires a good understanding of both autodiff and its implementation in Stan Math. And even with that knowledge, its not feasible to confirm an assumed bottleneck is a true bottleneck. Optimization of a Stan model for faster per-gradient execution is therefore very difficult.
+1. Identifying bottlenecks in a Stan model
+2. Evaluating different approaches for a section of a model
 
-2. evaluating different approaches for a section of a model
+First, identifying bottlenecks requires a good understanding of both autodiff and its
+implementation in Stan Math. For instance, if a function is implemented in Stan Math without
+custom autodiff, it might perform slower than an algorithmically cheaper function that does
+have custom autodiff. There can also be significant overhead of the autodiff that is hard to
+anticipate from the structure of the Stan code itself (for instance, the speedups that
+`reduce_sum` gives because of cache locality in the calculations).
 
-It is very difficult to evaluate how a different approach to a secton of a model influences per-gradient performance as even small numerical differences can lead to different behaviour of the sampler and the entire model must to be run with different seeds for a fair comparison. And even then, the effect of the changes can be difficult to identify in the overall noise of a model execution that includes IO and other parts of a model.
-
-For these cases, profiling a subexpression in the AD expression graph is required. For some functions it can still be seed-dependent, but to a much lesser extent especially with increasing numbers of gradient/function evaluations. 
-
-Examples of cases where evaluating is very useful: evaluating paralleliziation approaches (reduce_sum, map_rect, GPUs), identifying the effect of using a different solver or a different expression.
+Second, even with knowledge of how autodiff is implemented in Stan Math, it is often not
+easy to set up an experiment to measure a piece of code or confirm that a code change has made
+the model faster. The most reliable timing mechanism currently in Stan is at the model level,
+which means to measure performance differences in code it is necessary to measure the
+performance differences in MCMC calculations -- this is difficult to rely on because of
+the potential randomness (there are single model gradients timings output by cmdstan, but
+these are not very accurate).
 
 # Profiling on the Stan model level
 [stan-model-profiling]: #stan-model-profiling
 
-A user defines profiling sections inside a model by writing `profile("profile-section-name");`. The argument to `profile()` is always a string literal. A profile will measure execution time and other AD information for all expressions for the Stan lines for which the profile is in scope.
+The proposed profile interface is the addition of a new stan function, `profile`, which
+measures the performance of all code between the statement itself and the end of the
+enclosing block. The function `profile` takes one argument, a string, which is used to
+summarize the timing results. This is the profile name.
 
-An model with examples of its usage is shown below:
+For instance, in a simple linear regression the `profile` command could be used to
+measure the cost of the joint density:
 
-```stan
-data {
-  int<lower=1> N;
-  real x[N];
-  vector[N] y;
+```
+model {
+  profile("model block");
+  sigma ~ normal(0, 1);
+  b ~ normal(0, 1);
+  y ~ normal(X * b, sigma);
 }
-transformed data {
-  profile("tdata");
-  vector[N] mu = rep_vector(0, N);
+```
+
+It could also be used to measure just the likelihood component and ignore the priors:
+```
+model {
+  sigma ~ normal(0, 1);
+  b ~ normal(0, 1);
+  profile("likelihood");
+  y ~ normal(X * b, sigma);
 }
-parameters {
-  real<lower=0> rho;
-  real<lower=0> alpha;
-  real<lower=0> sigma;
-}
+```
+
+For brevity, examples of the major use-cases of `profile` are included below,
+but the use cases themselves are here:
+
+1. A `profile` statement can be used in user-defined functions, in the
+`transformed data`, `transformed parameters`, `model`, and `generated quantities`
+blocks.
+
+2. A `profile` statement that times non-autodiff code will be recorded in the
+same as a statement that times autodiff code (just the autodiff cost will be
+zero).
+
+3. There can be multiple `profile` statements with the same name. The name of
+the profile statement has global scope - they all accumulate to one set of timers
+and so will be reported in aggregate. This means profiles with the same name in
+different blocks record in the same place.
+
+4. Stan blocks `{...}` can be used to limit what a `profile` measured (and so
+`profile` can be used to measure the expense of different parts of a loop or
+branches of a conditional statement).
+
+5. Timing statements can be nested, but they must be different.
+
+6. A timing statement cannot be recursively entered
+
+## Blocks and loops
+
+As an extended example of how a `profile` statement works with blocks and loops,
+consider the construction of the Cholesky factor of a Gaussian process kernel:
+
+```
 transformed parameters {
   matrix[N, N] L_K;
   matrix[N, N] K;
@@ -55,47 +103,102 @@ transformed parameters {
   real sq_sigma = square(sigma);
 
   for (n in 1:N) {
-    profile("add_diagonal");
+    profile("add diagonal");
     K[n, n] = K[n, n] + sq_sigma;
   }    
 
   profile("cholesky");
   L_K = cholesky_decompose(K);
 }
-model { 
-  {
-    profile("priors");
-    rho ~ inv_gamma(5, 5);
-    alpha ~ normal(0, 1);
-    sigma ~ normal(0, 1);
-  }
-  
-  {
-    profile("likelihood");
-    y ~ multi_normal_cholesky(mu, L_K);
-  }
-}
 ```
 
-The model uses six profiles: 
-- `tdata` profiles the only statement in the transformed data block
-- `gp` profiles the `gp_exp_quad_cov` function
-- `add_diagonal` profiles the for loop. Profiles in a loop will accumulate as will profiles with the same name on different lines.
-- `cholesky` profiles the Cholesky decomposition as it goes out of scope at the end of the transformed parameters block.
-- `priors` profiles the three prior definitons in the model block
-- `likelihood` profiles the `multi_normal_cholesky_lpdf` function
+There are three profiles here. The first profile, `gp`, will time only the
+statement `K = gp_exp_quad_cov(x, alpha, rho)` because its enclosing scope
+ends immediately after.
 
-There are no other changes to Stan models or language. 
+The second profile, `add diagonal`, will measure the cost of each iteration
+of the for loop and accumulate that under the `add diagonal` profile name.
 
-Note that we can not profile the following as only parameter declarations are allowed in the `parameters` block.
+The third profile, `cholesky`, measures only the cost of
+`cholesky_decompose` before going out of scope.
+
+## Nested profiles
+
+Nested profiles can be used when the overall cost and the individual cost
+of operations are interesting. In this case:
+
 ```stan
-parameters {
-  real<lower=0> rho;
-  real<lower=0> alpha;
-  real<lower=0> sigma;
+model {
+  profile("model");
+  {
+    profile("prior");
+    sigma ~ normal(0, 1);
+    b ~ normal(0, 1);
+  }
+  profile("likelihood");
+  y ~ normal(X * b, sigma);
 }
 ```
-This means that the `lower`, `upper`, `multiply` and `offset` constraints/transforms can not be profiled. Given that these are less likely to be a bottleneck we decided to not change the Stan language rules to allow `profile()` in the parameters block for only this use-case.
+
+## Different blocks and user-defined functions
+
+`profile` statements are fine to use in user-defined functions, though using
+one in a recursive function will result in a runtime error. In the example here,
+the user-defined functions is used in multiple blocks. Because of this
+the timing results reported for the profile `myfunc` will include timing from
+the model block (that has autodiff and runs for every gradient evaluation) and
+the generated quantities (that does not have autodiff and only runs once
+for every MCMC draw that is printed).
+
+```stan
+functions {
+  real myfunc(vector alpha) {
+    profile("myfunc");
+    ...;
+  }
+}
+...
+model {
+  real x = myfunc(alpha);
+  ...
+}
+...
+generated quantities {
+  real x = myfunc(alpha);
+  ...
+}
+```
+
+There is ambiguity in what the `myfunc` profile is timing. If in a specific
+situation is was important to resolve this ambiguity, then the timing
+statements should be moved from inside the function to where the function
+is used:
+
+```
+model {
+  real x;
+  {
+    profile("myfunc - model");
+    x = myfunc(alpha);
+  }
+  ...
+}
+...
+generated quantities {
+  real x;
+  {
+    profile("myfunc - generated quantities");
+    x = myfunc(alpha);
+  }
+  ...
+}
+```
+
+## Note on parameters block
+
+Because only parameter declaration statements are allowed in the `parameters`
+block, `profile` cannot be used there. This means that the `lower`, `upper`,
+`multiply` and `offset` constraints/transforms can not be profiled.
 
 # Stanc3 - changes to the generated C++
 
