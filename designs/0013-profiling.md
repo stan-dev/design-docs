@@ -289,10 +289,12 @@ all the timers are stopped manually at the end of the `transformed parameters` b
 
 - After the fitting in cmdstan finishes, the profiling information is printed to stdout:
 
+```
 profile_name,n_calls,total_time,fwd_time,rev_time,chaining_varis,non_chaining_varis
 bernoulli GLM,1234,0.0409984,0.000453154,10,0
 normal_lpdf alpha,1234,0.00238057,0.000497744,1,100
 normal_lpdf beta,1234,0.00349398,0.0005345,1,100
+```
 
 - If the argument `profiling_file = filename.csv` is provided, the information is stored
 in a separate CSV and not printed to stdout.
