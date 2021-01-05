@@ -303,8 +303,8 @@ well as inner blocks). It is fairly easy to add profile statements where they
 are needed manually, so this seemed unnecessary even if it is occasionally
 handy.
 
-- Sample based timers are common in other situations (stop the code 100 times
-a second and record the stack). This sort of timing would not work with
+- Sample based timers are another way of instrumenting code (stop the code 100
+times a second and record the stack). This sort of timing would not work with
 the reverse pass though.
 
 - There were a variety of other Stan interfaces that were proposed. The current
