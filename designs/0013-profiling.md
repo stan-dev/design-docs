@@ -30,7 +30,7 @@ easy to set up an experiment to measure a piece of code or confirm that a code c
 the model faster. The most reliable timing mechanism currently in Stan is at the model level,
 which means to measure performance differences in code it is necessary to measure the
 performance differences in MCMC calculations -- this is difficult to rely on because of
-the potential randomness (there are single model gradients timings output by cmdstan, but
+the potential randomness (there are single model gradients timings output by CmdStan, but
 these are not very accurate).
 
 # Profiling on the Stan model level
@@ -44,7 +44,7 @@ summarize the timing results. This is the profile name.
 For instance, in a simple linear regression the `profile` command could be used to
 measure the cost of the joint density:
 
-```
+```stan
 model {
   profile("model block");
   sigma ~ normal(0, 1);
@@ -54,7 +54,7 @@ model {
 ```
 
 It could also be used to measure just the likelihood component and ignore the priors:
-```
+```stan
 model {
   sigma ~ normal(0, 1);
   b ~ normal(0, 1);
@@ -71,7 +71,7 @@ but the use cases themselves are here:
 blocks.
 
 2. A `profile` statement that times non-autodiff code will be recorded in the
-same as a statement that times autodiff code (just the autodiff cost will be
+same way as a statement that times autodiff code (just the autodiff cost will be
 zero).
 
 3. There can be multiple `profile` statements with the same name. The name of
@@ -85,7 +85,31 @@ branches of a conditional statement).
 
 5. Timing statements can be nested, but they must have different names.
 
-6. A timing statement cannot be recursively entered
+6. An active profile can not be started again. Meaning that 
+```stan
+model {
+  profile("likelihood");
+  sigma ~ normal(0, 1);
+  profile("likelihood");
+  b ~ normal(0, 1);
+  y ~ normal(X * b, sigma);
+}
+```
+will result in a runtime error and 
+```stan
+model {
+  {
+    profile("likelihood");
+    sigma ~ normal(0, 1);
+  }
+  {
+    profile("likelihood");
+    b ~ normal(0, 1);
+    y ~ normal(X * b, sigma);
+  }
+}
+```
+is valid.
 
 ## Blocks and loops
 
@@ -202,9 +226,9 @@ block, `profile` cannot be used there. This means that the `lower`, `upper`,
 
 # The Stan Math implementation
 
-The `profile` functionality in Stan is implemented two functions, `profile_start`
+The `profile` functionality in Stan is implemented witho two functions, `profile_start`
 and `profile_stop` which handle intrumenting the code. A C++ `std::map` is to
-store the accumulated timing results of each profile by name.
+store the accumulated timing results of each profile by name and thread ID.
 
 The two functions `profile_start` and `profile_stop` are implemented with the
 signatures:
@@ -233,7 +257,7 @@ the forward and reverse pass calculations can both be timed.
 `profile_start` and `profile_stop` also record the number of varis on
 the chaining and non-chaining stacks.
 
-If the template argument `T` is arithmetic, then `profile_start` and
+If the template argument `T` is `double`, then `profile_start` and
 `profile_stop` only record timing information. They do not push any
 varis onto the chaining autodiff stack or record information about the
 number of varis on the chaining and non-chaining autodiff stacks.
@@ -259,7 +283,7 @@ The C++ code generated from Stan models will be changed accordingly:
 
 - The `transformed parameters` block in Stan does not translate directly to a C++
 block, so the RAII profile class does not stop the timers correctly. Instead
-all the timers are stopped manually.
+all the timers are stopped manually at the end of the `transformed parameters` block.
 
 # The CmdStan interface
 
@@ -307,7 +331,7 @@ handy.
 a second and record the stack). This sort of timing would not work with
 the reverse pass though.
 
-- There were a variety of other Stan interfaces that were proposed. The current
+- There were a variety of other Stan language interfaces that were proposed. The current
 one was chosen for simplicity.
 
     Manual start stops are more verbose and require the start stop string to match
