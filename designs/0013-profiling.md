@@ -315,6 +315,8 @@ or ADVI)
 - We can not profile transforms of the parameters defined in the parameters
 block
 
+- when fitting using MPI, the output can be cluttered due to multi-process I/O.
+
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
