@@ -36,10 +36,10 @@ these are not very accurate).
 # Profiling on the Stan model level
 [stan-model-profiling]: #stan-model-profiling
 
-The proposed profile interface is the addition of a new Stan language construct, termed 
-`profile`, that profiles all code within its enclosed brackets. The construct `profile` 
-takes one argument, a string, which is used to summarize the timing results. This is the profile name.
-This is then followed by a set of curly brackets that define the explicit scope of the profile.
+The proposed profile interface is the addition of a new Stan language construct, the 
+`profile` statement. The `profile` statement takes one string argument (a name) and is followed by a
+code block. `profile` measures the performance of code in the block and summarizes it
+under the given profile name.
 
 For instance, in a simple linear regression the `profile` command could be used to
 measure the cost of the joint density:
@@ -68,31 +68,18 @@ model {
 For brevity, examples of the major use-cases of `profile` are included below,
 but the use cases themselves are here:
 
-1. `profile` can be used in user-defined functions, in the
+1. `profile` statements can be used in user-defined functions, in the
 `transformed data`, `transformed parameters`, `model`, and `generated quantities`
 blocks.
 
-2. `profile` that times non-autodiff code will be recorded in the
-same way as a statement that times autodiff code (just the autodiff cost will be
+2. `profile` statements that time non-autodiff code will be recorded in the
+same way as statements that times autodiff code (just the autodiff cost will be
 zero).
 
-3. There can be multiple `profile` language constructs with the same name. The name of
+3. There can be multiple `profile` statements with the same name. The name of
 the profile statement has global scope - they all accumulate to one set of timers
 and so will be reported in aggregate. This means profiles with the same name in
 different blocks record in the same place.
-
-In the following example the profiles will accumulate:
-```stan
-model {
-  profile("likelihood") {
-    sigma ~ normal(0, 1);
-  }
-  profile("likelihood") {
-    b ~ normal(0, 1);
-    y ~ normal(X * b, sigma);
-  }  
-}
-```
 
 4. Timing statements can be nested, but they must have different names. The following will 
 result in a runtime error:
@@ -107,9 +94,43 @@ model {
   }
 }
 ```
+## Duplicate names
+
+All timers with the same name record to the same place. Be aware, timing two
+blocks with the same name is different than timing the code together.
+
+In this case, the profile `model` records information about the evaluation of
+the model block:
+```stan
+model {
+  profile("model") {
+    sigma ~ normal(0, 1);
+    b ~ normal(0, 1);
+    y ~ normal(X * b, sigma);
+  }  
+}
+```
+
+In this case, the profile `model` records information about the evaluation of
+the prior and the likelihood separately, but saves the results in the same
+timing profile. This may make the timing summary statistics tricky to interpret
+but is legal code:
+
+```stan
+model {
+  profile("model") {
+    sigma ~ normal(0, 1);
+    b ~ normal(0, 1);
+  }
+  profile("model") {
+    y ~ normal(X * b, sigma);
+  }  
+}
+```
+
 ## Blocks and loops
 
-As an extended example of how a `profile` construct works with blocks and loops,
+As an extended example of how a `profile` statement works with blocks and loops,
 consider the construction of the Cholesky factor of a Gaussian process kernel:
 
 ```stan
@@ -162,7 +183,7 @@ model {
 
 ## Different blocks and user-defined functions
 
-`profile` constructs are fine to use in user-defined functions, though using
+`profile` statements are fine to use in user-defined functions, though using
 one in a recursive function will result in a runtime error. In the example here,
 the user-defined functions is used in multiple blocks. Because of this
 the timing results reported for the profile `myfunc` will include timing from
@@ -328,8 +349,28 @@ handy.
 times a second and record the stack). This sort of timing would not work with
 the reverse pass though.
 
-- There were a variety of other Stan language interfaces that were proposed. The current
-one was chosen for simplicity.
+- There were a variety of other Stan language interfaces that were proposed. The
+current one was chosen for simplicity.
+
+    The special block statements may seem unnecessarily verbose. The profile
+    statement could mimic the C++ RAII, in this case profile statements would
+    go inside already existing blocks and time from the statement itself to
+    the end of that block:
+
+    ```stan	
+    {
+      profile("profile-name");
+      function_call();	
+    }	
+    ```
+
+    The first problem with this is that `profile` looks like a function call,
+    but it behaves like a variable -- it has variable scope, but no name! This
+    could be confusing as it is would be relatively unique in the language.
+    The second, which is more of a minor technical detail, is that the
+    `transformed parameters` block in Stan is actually not a C++ block in and
+    of itself and so some special code would be needed to make the profile stop
+    early.
 
     Manual start stops are more verbose and require the start stop string to match
     exactly (or it is an error):
