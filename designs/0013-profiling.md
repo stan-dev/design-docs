@@ -36,20 +36,21 @@ these are not very accurate).
 # Profiling on the Stan model level
 [stan-model-profiling]: #stan-model-profiling
 
-The proposed profile interface is the addition of a new stan function, `profile`, which
-measures the performance of all code between the statement itself and the end of the
-enclosing block. The function `profile` takes one argument, a string, which is used to
-summarize the timing results. This is the profile name.
+The proposed profile interface is the addition of a new Stan language construct, termed 
+`profile`, that profiles all code within its enclosed brackets. The construct `profile` 
+takes one argument, a string, which is used to summarize the timing results. This is the profile name.
+This is then followed by a set of curly brackets that define the explicit scope of the profile.
 
 For instance, in a simple linear regression the `profile` command could be used to
 measure the cost of the joint density:
 
 ```stan
 model {
-  profile("model block");
-  sigma ~ normal(0, 1);
-  b ~ normal(0, 1);
-  y ~ normal(X * b, sigma);
+  profile("model block") {
+    sigma ~ normal(0, 1);
+    b ~ normal(0, 1);
+    y ~ normal(X * b, sigma);
+  }  
 }
 ```
 
@@ -58,93 +59,86 @@ It could also be used to measure just the likelihood component and ignore the pr
 model {
   sigma ~ normal(0, 1);
   b ~ normal(0, 1);
-  profile("likelihood");
-  y ~ normal(X * b, sigma);
+  profile("likelihood") {
+    y ~ normal(X * b, sigma);
+  }  
 }
 ```
 
 For brevity, examples of the major use-cases of `profile` are included below,
 but the use cases themselves are here:
 
-1. A `profile` statement can be used in user-defined functions, in the
+1. `profile` can be used in user-defined functions, in the
 `transformed data`, `transformed parameters`, `model`, and `generated quantities`
 blocks.
 
-2. A `profile` statement that times non-autodiff code will be recorded in the
+2. `profile` that times non-autodiff code will be recorded in the
 same way as a statement that times autodiff code (just the autodiff cost will be
 zero).
 
-3. There can be multiple `profile` statements with the same name. The name of
+3. There can be multiple `profile` language constructs with the same name. The name of
 the profile statement has global scope - they all accumulate to one set of timers
 and so will be reported in aggregate. This means profiles with the same name in
 different blocks record in the same place.
 
-4. Stan blocks `{...}` can be used to limit what a `profile` measured (and so
-`profile` can be used to measure the expense of different parts of a loop or
-branches of a conditional statement).
-
-5. Timing statements can be nested, but they must have different names.
-
-6. An active profile can not be started again. Meaning that 
+In the following example the profiles will accumulate:
 ```stan
 model {
-  profile("likelihood");
-  sigma ~ normal(0, 1);
-  profile("likelihood");
-  b ~ normal(0, 1);
-  y ~ normal(X * b, sigma);
-}
-```
-will result in a runtime error and 
-```stan
-model {
-  {
-    profile("likelihood");
+  profile("likelihood") {
     sigma ~ normal(0, 1);
   }
-  {
-    profile("likelihood");
+  profile("likelihood") {
     b ~ normal(0, 1);
     y ~ normal(X * b, sigma);
+  }  
+}
+```
+
+4. Timing statements can be nested, but they must have different names. The following will 
+result in a runtime error:
+```stan
+model {
+  profile("likelihood") {
+    sigma ~ normal(0, 1);
+    profile("likelihood") {
+      b ~ normal(0, 1);
+      y ~ normal(X * b, sigma);
+    }    
   }
 }
 ```
-is valid.
-
 ## Blocks and loops
 
-As an extended example of how a `profile` statement works with blocks and loops,
+As an extended example of how a `profile` construct works with blocks and loops,
 consider the construction of the Cholesky factor of a Gaussian process kernel:
 
-```
+```stan
 transformed parameters {
   matrix[N, N] L_K;
   matrix[N, N] K;
-  {
-    profile("gp");
+  profile("gp"){
     K = gp_exp_quad_cov(x, alpha, rho);
   }
   real sq_sigma = square(sigma);
 
   for (n in 1:N) {
-    profile("add diagonal");
-    K[n, n] = K[n, n] + sq_sigma;
-  }    
-
-  profile("cholesky");
-  L_K = cholesky_decompose(K);
+    profile("add diagonal") {
+      K[n, n] = K[n, n] + sq_sigma;
+    }
+  }
+  profile("cholesky") {
+    L_K = cholesky_decompose(K);
+  }  
 }
 ```
 
-There are three profiles here. The first profile, `gp`, will time only the
-statement `K = gp_exp_quad_cov(x, alpha, rho)` because its enclosing scope
-ends immediately after.
+There are three profiles here. The first profile, `gp`, will time the
+statement `K = gp_exp_quad_cov(x, alpha, rho)`. The second profile,
+`add diagonal`, will measure the cost of each iteration of the for loop 
+and accumulate that under the `add diagonal` profile name.
 
-The second profile, `add diagonal`, will measure the cost of each iteration
-of the for loop and accumulate that under the `add diagonal` profile name.
-
-The third profile, `cholesky`, measures only the cost of
-`cholesky_decompose` before going out of scope.
+The third profile, `cholesky`, measures the cost of
+`cholesky_decompose`.
 
 ## Nested profiles
 
@@ -155,18 +149,20 @@ of operations are interesting. In this case:
 model {
   profile("model");
   {
-    profile("prior");
-    sigma ~ normal(0, 1);
-    b ~ normal(0, 1);
+    profile("prior") {
+      sigma ~ normal(0, 1);
+      b ~ normal(0, 1);
+    }    
   }
-  profile("likelihood");
-  y ~ normal(X * b, sigma);
+  profile("likelihood") {
+    y ~ normal(X * b, sigma);
+  }  
 }
 ```
 
 ## Different blocks and user-defined functions
 
-`profile` statements are fine to use in user-defined functions, though using
+`profile` constructs are fine to use in user-defined functions, though using
 one in a recursive function will result in a runtime error. In the example here,
 the user-defined functions is used in multiple blocks. Because of this
 the timing results reported for the profile `myfunc` will include timing from
@@ -177,8 +173,9 @@ for every MCMC draw that is printed).
 ```stan
 functions {
   real myfunc(vector alpha) {
-    profile("myfunc");
-    ...;
+    profile("myfunc") {
+      ...;
+    }    
   }
 }
 ...
@@ -201,8 +198,7 @@ is used:
 ```
 model {
   real x;
-  {
-    profile("myfunc - model");
+  profile("myfunc - model") {
     x = myfunc(alpha);
   }
   ...
@@ -210,8 +206,7 @@ model {
 ...
 generated quantities {
   real x;
-  {
-    profile("myfunc - generated quantities");
+  profile("myfunc - generated quantities") {
     x = myfunc(alpha);
   }
   ...
@@ -275,15 +270,13 @@ The C++ code generated from Stan models will be changed accordingly:
 - C++ calls to profile will be generated as:
 
     ```cpp
-    profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
+    {
+      profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
+      ... statements
+    }    
     ```
-
     where X will be replaced by a unique number. The `const_cast` is required
     because log_prob and other model functions are const.
-
-- The `transformed parameters` block in Stan does not translate directly to a C++
-block, so the RAII profile class does not stop the timers correctly. Instead
-all the timers are stopped manually at the end of the `transformed parameters` block.
 
 # The CmdStan interface
 
@@ -345,15 +338,6 @@ one was chosen for simplicity.
     start_profiling("profile-name");
     function_call();
     stop_profiling("profile-name");
-    ```
-
-    Special profile block statements are unnecessarily verbose because the
-    profile can just go on the inside of an already existing block:
-
-    ```stan
-    profile("profile-name") {
-      function_call();
-    }
     ```
 
     Decorators for blocks or function calls would be a new syntax for, which
