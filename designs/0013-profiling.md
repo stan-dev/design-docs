@@ -292,7 +292,7 @@ The C++ code generated from Stan models will be changed accordingly:
 
     ```cpp
     {
-      profile id_X = profile(const_cast<profile_map&>(profiles__), "literal");
+      profile<T__> profile("literal", const_cast<profile_map&>(profiles__));
       ... statements
     }    
     ```
