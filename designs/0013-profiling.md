@@ -381,7 +381,7 @@ current one was chosen for simplicity.
     Decorators for blocks or function calls would be a new syntax for, which
     seemed unnecessary:
 
-    ````
+    ```
     @profile("profile-name");
     {
       function_call();
