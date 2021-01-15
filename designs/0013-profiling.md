@@ -242,7 +242,7 @@ block, `profile` cannot be used there. This means that the `lower`, `upper`,
 
 # The Stan Math implementation
 
-The `profile` functionality in Stan is implemented witho two functions, `profile_start`
+The `profile` functionality in Stan is implemented with two functions, `profile_start`
 and `profile_stop` which handle intrumenting the code. A C++ `std::map` is to
 store the accumulated timing results of each profile by name and thread ID.
 
@@ -296,22 +296,19 @@ The C++ code generated from Stan models will be changed accordingly:
       ... statements
     }    
     ```
-    where X will be replaced by a unique number. The `const_cast` is required
-    because log_prob and other model functions are const.
+    The `const_cast` is required because log_prob and other model functions are const.
 
 # The CmdStan interface
 
-- After the fitting in cmdstan finishes, the profiling information is printed to stdout:
+- After the fitting in CmdStan finishes, the profiling information is stored in a 
+  CSV file. By default, the CSV file is named `profile.csv`. An example of a CSV file
+  is given below.
 
 ```
-profile_name,n_calls,total_time,fwd_time,rev_time,chaining_varis,non_chaining_varis
-bernoulli GLM,1234,0.0409984,0.000453154,10,0
-normal_lpdf alpha,1234,0.00238057,0.000497744,1,100
-normal_lpdf beta,1234,0.00349398,0.0005345,1,100
+name,thread_id,time_total,forward_time,reverse_time,chain_stack_total,nochain_stack_total,no_autodiff_passes,autodiff_passes
+glm,140475847071552,0.0378336,0.0375202,0.000313417,12192,0,1,12192
+priors,140475847071552,0.00485089,0.00391626,0.000934627,48768,0,1,12192
 ```
-
-- If the argument `profiling_file = filename.csv` is provided, the information is stored
-in a separate CSV and not printed to stdout.
 
 # Disadvantages of this approach
 [Disadvantages]: #Disadvantages
@@ -326,10 +323,10 @@ nesting has to be understood and intepreted from the results manually)
 - There is no separation between warmup and non-warmup timing (for sampling
 or ADVI)
 
-- We can not profile transforms of the parameters defined in the parameters
-block
-
-- when fitting using MPI, the output can be cluttered due to multi-process I/O.
+- We can not profile top-level declarations in any of the blocks and can thus also not profile
+any transforms defined in such declarations. As top-level declarations are the only allowed 
+statements in the `parameters` block, this also means that profiling is not allowed in the
+parameters block.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
