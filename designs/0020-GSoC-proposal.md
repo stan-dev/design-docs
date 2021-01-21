@@ -2,8 +2,8 @@
 
 # Project List
 Stan will be offering the following projects for GSoC 2021:
-  - [Lambert W Transforms](##-Lambert-W-Transforms)
-  - [Optimizing Complex Stan Models](##-Optimizing-Complex-Stan-Models)
+  - [Lambert W Transforms](#lambert-w-transforms)
+  - [Optimizing Complex Stan Models](#optimizing-complex-stan-models)
 
 ## Lambert W Transforms
 
