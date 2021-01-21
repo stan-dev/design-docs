@@ -2,10 +2,10 @@
 
 # Project List
 Stan will be offering the following projects for GSoC 2021:
-  - 
-  - 
+  - [Lambert W Transforms](#-Lambert-W-Transforms)
+  - [Optimizing Complex Stan Models](#-Optimizing-Complex-Stan-Models)
 
-##  Lambert W Transforms
+## Lambert W Transforms
 
 ### Abstract
 
@@ -13,7 +13,7 @@ Stan will be offering the following projects for GSoC 2021:
 
 | **Intensity**                          | **Priority**              | **Involves**  | **Mentors**              |
 | -------------                          | ------------              | ------------- | -----------              |
-| {{ Trivial - Easy - Moderate - Hard }} | {{ Low - Medium - High }} | {{ }}         | {{ [Steve Bronder](https://github.com/SteveBronder), [Sean Pinkney](https://github.com/spinkney) }} |
+| {{ Trivial - Easy - Moderate - Hard }} | {{ Low - Medium - High }} | {{ }}         |[Steve Bronder](https://github.com/SteveBronder), [Sean Pinkney](https://github.com/spinkney) |
 
 ### Project Details
 
@@ -51,7 +51,7 @@ Students doesn't need to do this before Google Summer of Code code period starts
 but will be good if they do just because they will be sure if this is how they
 want to spend the summer.
 
-##  Optimizing Stan Models
+## Optimizing Complex Stan Models
 
 ### Abstract
 
@@ -59,7 +59,7 @@ want to spend the summer.
 
 | **Intensity**                          | **Priority**              | **Involves**  | **Mentors**              |
 | -------------                          | ------------              | ------------- | -----------              |
-| {{ Trivial - Easy - Moderate - Hard }} | {{ Low - Medium - High }} | {{ }}         | {{ [Måns Magnusson](https://github.com/MansMeg), [Mike Lawrence](https://github.com/mike-lawrence) }} |
+| {{ Trivial - Easy - Moderate - Hard }} | {{ Low - Medium - High }} | {{ }}         | [Måns Magnusson](https://github.com/MansMeg), [Mike Lawrence](https://github.com/mike-lawrence) |
 
 ### Project Details
 
