@@ -1,4 +1,4 @@
-# Stan - GSoC Project Descriptions
+# Stan GSoC 2021 Project Descriptions
 
 # Project List
 Stan will be offering the following projects for GSoC 2021:
