@@ -49,7 +49,7 @@ As you can see, ARMA and GARCH are pretty similar! The fun starts happening when
 
 Here, `gamma` acts like a weight that when positive amplifies the expected volatility if previous errors were negative.
 
-Inside of brms it's possible to [model parameters]() and so for `sigma` we would like to allow syntax such as
+Inside of brms it's possible to [distributional parameters](https://paul-buerkner.github.io/brms/articles/brms_distreg.html) and so for `sigma` we would like to allow syntax such as
 
 ```R
 # Only autoregressive
@@ -64,7 +64,14 @@ sigma ~ aar(time | group, q = 1)
 sigma ~ agarch(time | group, p = 1, q = 1)
 ```
 
+This would be combined with the current ARMA syntax to create models with varying autoregressive components for both the mean and variance such as
 
+```R
+bf_mod = bf(
+  y ~ arma(time | group, p = 1, q = 1),
+  sigma ~ agarch(time | group, p = 1, q = 1)
+)
+```
 
 ### Expected Results and Milestones
 
