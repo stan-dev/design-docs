@@ -45,7 +45,7 @@ Where
 
 As you can see, ARMA and GARCH are pretty similar! The fun starts happening when we are talking about real life modeling where it's very common to have very nasty tails on volatility models. Then we start building models such as asymmetric GARCH (AGARCH) models where one side of volatility leads to more conditional heteroskedasticity than the other.
 
-<img src="https://latex.codecogs.com/svg.latex?\small&space;\sigma_t^2=\omega&space;&plus;&space;\sum_{i=1}^p&space;\beta_i\sigma_{t-i}^2&space;&plus;&space;\sum_{i=1}^q&space;\alpha_i(\epsilon_{t-i}&space;-&space;\gamma_i)^2&space;\\" title="\small \sigma_t^2=\omega + \sum_{i=1}^p \beta_i\sigma_{t-i}^2 + \sum_{i=1}^q \alpha_i(\epsilon_{t-i} - \gamma_i)^2 \\" />
+<img src="https://latex.codecogs.com/svg.latex?\small&space;\sigma_t^2=\omega&space;&plus;&space;\sum_{i=1}^p&space;\beta_i\sigma_{t-i}^2&space;&plus;&space;\sum_{i=1}^q&space;\alpha_i&space;(\epsilon_{t-i}&space;-&space;\gamma_i)^2&space;\\" title="\small \sigma_t^2=\omega + \sum_{i=1}^p \beta_i\sigma_{t-i}^2 + \sum_{i=1}^q \alpha_i (\epsilon_{t-i} - \gamma_i)^2 \\" />
 
 Here, `gamma` acts like a weight that when positive amplifies the expected volatility if previous errors were negative.
 
