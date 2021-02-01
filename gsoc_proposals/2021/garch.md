@@ -73,6 +73,8 @@ bf_mod = bf(
 )
 ```
 
+Challenges from brms side will be to determine which of all the other modeling options can be combined with GARCH models. For example, how to combine GARCH models on sigma with distributional regression in sigma. Other difficulties will be to implement all the post-processing such as posterior predictions etc. The existing ARMA terms already pave the way for all of this but we will have to figure out if the current structure is satisfactory for autoregressive terms to be applied to distributional parameters other than the mean. There are also other minor difficulties such as if/how GARCH models can be combined with a covariance formulation of ARMA models on the mean `arma(..., cov = TRUE)`. These are all details we have to figure out in the process.
+
 ### Expected Results and Milestones
 
 The expected result of this project is that brms users will have access to a simple way to incorporate standard volatility models into their overall model structure.
