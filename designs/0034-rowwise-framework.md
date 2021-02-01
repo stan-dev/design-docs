@@ -129,7 +129,7 @@ The tuple packing and unpacking may introduce overhead additional to that from t
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-
+The primary alternative is a simple loop. However, the ```rowwise```/```colwise``` functions may allow for more complex function specifications. 
 
 # Prior art
 [prior-art]: #prior-art
