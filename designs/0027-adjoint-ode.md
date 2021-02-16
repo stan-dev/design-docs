@@ -14,12 +14,12 @@ implement in Stan the so-called forward-mode ODE method in order to
 obtain in addition to the solution of the ODE the sensitivities of the
 ODE. The cost of this method scales as 
 
-$$ N * M . $$
+$$ N \cdot M . $$
 
 The computational cost of the adjoint method is much more favorable
 in comparison which is
 
-$$ 2 * N + M .$$
+$$ 2 \cdot N + M .$$
 
 The advantage of the adjoint methods shows in particular whenever the
 number of parameters are relatively large in comparison to the number
@@ -38,10 +38,10 @@ adjoint ODE solving method Stan will be able to scale to much larger
 problems involving more states and more parameters. Examples are large
 pharmacokinetic / pharmacodynamic systems or physiological based
 pharmacokinetic models or bigger susceptible infectious & removed
-models. As the adjoint ODE method will grow the computational cost
-only linearly with states and parameters, the modelers can more freely
-increase the complexity of the ODE model without having to worry too
-much about infeasible inference times.
+models. The adjoint ODE method will grow the computational cost only
+linearly with states and parameters and therefore the modelers can
+more freely increase the complexity of the ODE model without having to
+worry too much about infeasible inference times.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -54,12 +54,13 @@ package which we already include in Stan.
 
 From a more internal stan math perspective, the key difference to the
 existing forward mode solvers will be that the gradients are not any
-more precomputed. Instead, during the forward sweep of reverse mode
-autodiff, the ODE is solved first for the N states (without any
-sensitivities). When reverse mode AD then performs the backward sweep,
-the adjoints of the input operands are directly computed given the
-input adjoints. This involves a backward solve in time with N states
-and solving M quadrature problems in addition.
+more precomputed during the forward sweep of reverse mode autodiff
+(AD). Instead, during the forward sweep of reverse mode autodiff, the
+ODE is solved only for the N states (without any sensitivities). When
+reverse mode AD then performs the backward sweep, the adjoints of the
+input operands are directly computed given the input adjoints. This
+involves a backward solve in time with N states and solving $M$
+quadrature problems in addition.
 
 The numerical complexity is higher for the adjoint method in
 comparison to the forward method. While most of the complexity is
@@ -84,33 +85,124 @@ During an experimental phase of this feature we can hopefully learn
 which of these are relevant and which can be dropped for a final
 release of the `ode_adjoint` function.
 
-**Leaving the template text here for now**
-
-Explain the proposal as if it was already included in the project and you were teaching it to another Stan programmer in the manual. That generally means:
-
-- Introducing new named concepts.
-- Explaining the feature largely in terms of examples.
-- Explaining how Stan programmers should *think* about the feature, and how it should impact the way they use the relevant package. It should explain the impact as concretely as possible.
-- If applicable, provide sample error messages, deprecation warnings, or migration guidance.
-- If applicable, describe the differences between teaching this to existing Stan programmers and new Stan programmers.
-
-For implementation-oriented RFCs (e.g. for compiler internals), this section should focus on how compiler contributors should think about the change, and give examples of its concrete impact. For policy RFCs, this section should provide an example-driven introduction to the policy, and explain its impact in concrete terms.
-
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-Here I would like to document exactly the math of the approach using
-the notation of the CVODES manual.
+The adjoint method for ODEs is relatively involved mathematically. The
+main challenge comes from a mix of different notation and conventions
+used in different fields. Here we relate commonly used notation within
+Stan math to the [user guide of
+CVODES](https://computing.llnl.gov/sites/default/files/public/cvs_guide-5.6.1.pdf),
+the underlying library we employ to handle the numerical
+solution. The goal of reverse mode autodiff is to calculate the
+derivative of some function $l(\theta)$ wrt. to it's parameters
+$\theta$ at some particular realization of $\theta$. The function $l$
+now depends on the solution of an ODE given as initial value problem
 
-TODO !!!
+\begin{align}
+\dot{y} &= f(y,t,p) (\#eq:odeDef) \\
+ y(t_0) &= y^{(0)}. (\#eq:odeInitial)
+\end{align}
 
-This is the technical portion of the RFC. Explain the design in sufficient detail that:
+The ODE has $N$ states, $y=(y_1, \ldots, y_N)$, and is
+parametrized in terms of parameters $p$ which are a subset of
+$\theta$. Let's now further assume for simplicity that the function
+$l$ only depends on the solution of the ODE at the time-point
+$T$. During the reverse sweep of reverse mode autodiff we are then
+given the adjoints of $a_{l,y_n}$ wrt to the output state $y(T,p)$ which
+are the partials of $l$ wrt to each state
 
-- Its interaction with other features is clear.
-- It is reasonably clear how the feature would be implemented.
-- Corner cases are dissected by example.
+$$ a_{l,y_n} = \left.\frac{\partial l}{\partial y_n}\right|_{t=T} $$
 
-The section should return to the examples given in the previous section, and explain more fully how the detailed proposal makes those examples work.
+and we must calculate the contribution to the adjoint of the parameters
+
+$$ a_{l,p_m} = \sum_{n=1}^{N} \left. a_{l,y_n} \,  \frac{\partial y_n}{\partial p_m}\right|_{t=T}, $$
+
+which involves for each parameter $p_m$ the partial of every state
+$y_n$ wrt to the parameter $p_m$. Note that the computational benefit of the
+adjoint method stems from calculating the above sums *directly* in
+contrast to the forward method which calculates every partial
+$\left. \frac{\partial y_n}{\partial p_m}\right|_{t=T}$ separatley.
+
+In the notation of the CVODES user manual, the function $g(t,y,p)$
+**is equal to** $l(\theta)$ essentially. Through the use of Lagrange
+multipliers, the adjoint problem is transferred to a backward problem
+in equation 2.20 of the CVODES manual ([see here for a step-by-step
+derivation](https://arxiv.org/abs/2002.00326)),
+
+\begin{align}
+\dot{\lambda} &= - \left(\frac{\partial f}{\partial y}\right)^*
+\lambda - \left(\frac{\partial g}{\partial y}\right)^* (\#eq:lambdaOde) \\
+ \lambda(T) &= 0. (\#eq:lambdaInitial)
+\end{align}
+
+This ODE is referred to as the *backward* problem, since we fix the
+solution $\lambda$ at the final end-point $T$ instead of the initial
+condition at $t_0$ (it's a terminal value problem rather than an
+initial value problem). The CVODES manual then proceeds with deriving
+that
+
+\begin{equation}
+\left.\frac{d g}{d p}\right|_{t=T} = \mu^*(t_0) \, s(t_0) +
+\left.\frac{\partial g}{\partial p}\right|_{t=T} + \int_{t_0}^{T}
+\mu^* \, \frac{\partial f}{\partial p} \, dt.
+(\#eq:derivg)
+\end{equation}
+
+Here $s(t_0)$ is the state sensitivity wrt to the parameters at the
+initial time-point. The term $\left.\frac{\partial g}{\partial
+p}\right|_{t=T}$ is the partial derivative wrt to the parameters of
+$g(t,y,p)$. This term is determined by the terms in $g(t,y,p)$ which directly
+depend on the parameters and not implicitly due to the parameters
+affecting the ODE state. Thus, this term is being computed by the
+autodiff system of stan-math itself as part of the adjoints of the
+parameters, $a_{l,p_m}$. Finally, $\mu = \frac{d \lambda}{d T}$ such
+that $\mu$ is obtained by the equivalent backward problem (taking the
+total derivative of $\dot{\lambda}$ in \@ref(eq:lambdaOde) wrt to $T$)
+
+\begin{align}
+\dot{\mu} &= - \left(\frac{\partial f}{\partial y}\right)^* \, \mu
+(\#eq:muODE) \\
+\mu(T) &= \left(\frac{\partial g}{\partial y}\right)^*_{t=T}. (\#eq:muInitial)
+\end{align}
+
+If we now recall that $g(t,y,p)$ is equal to the function $l(\theta)$
+being subject to autodiff we see that
+
+$$\left(\frac{\partial g}{\partial y_n}\right)^*_{t=T} = a_{l,y_n}^*, $$
+
+which is the input we get during reverse mode autodiff (the conjugate
+transpose does not apply for Stan math using reals only).
+
+It is important to note that the backward ODE problem requires as
+input the adjoint $a_{l,y_n}^*$ such that the backward problem must be
+solved during the reverse pass of reverse mode autodiff. Thus, CVODES
+is used during the forward pass to *solve (forward)* the ODE in
+\@ref(eq:odeDef). Once the backward pass is initiated, the adjoints
+$a_{l,y_n}^*$ are used as the terminal value in order to solve the
+*backward problem* of \@ref(eq:muODE). Whenever any parameter
+sensitivities are requested, then we must solve along the backward
+problem an additional quadrature problem, which is the integrand in
+equation \@ref(eq:derivg).
+
+TODO: outline generalization to multiple time-points.
+
+In total we need to solve 3 integration problems which consist of a
+forward ODE problem, a backward ODE problem and a backward quadrature
+problem. The forward ODE and the backward ODE problem can be solved
+with either a non-stiff Adams or a stiff BDF solver of CVODES (the
+choice is independent for each problem). For the Newton steps of the
+BDF routine a linear solver routine is required. The routine can
+either be a dense solver or an approximate iterative solver. As we
+target large ODE systems it can be useful to allow users to choose the
+solver being used. For example, whenever the number of ODE states is
+very large, then an iterative solver may be preferable. The reason is
+that the dense solver will require the calculation of the full
+Jacobian $\frac{df}{dy}$ of the ODE RHS in \@ref(eq:odeDef) wrt to the
+states $y$. In contrast, the iterative solver only needs to evaluate
+Jacobian-vector products $\frac{df}{dy}\,v$, which we can compute
+directly using *forward mode*. In addition all 3 integration problems
+have their own relative and absolute tolerance targets.
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -122,14 +214,23 @@ ODE. This would allow for more efficient solvers and even larger
 systems, but this is not possible at the moment to figure out
 structurally the inter-dependencies of inputs and outputs.
 
-# TODO: Update the rest
-
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-- Why is this design the best in the space of possible designs?
-- What other designs have been considered and what is the rationale for not choosing them?
-- What is the impact of not doing this?
+There is no other analytical technique available which scales in a
+comparable way. Hence, larger ODE problems ( many parameters and/or
+states) are currently out of scope for Stan and the adjoint technique
+does enable Stan to cope with these larger systems.
+
+The numerical complexities are rather involved as 3 nested
+integrations are performed. This makes things somewhat fragile and
+less robust. What makes the backward integration in
+particular involved is that the solution of the forward problem must
+be stored as a continuous function in memory and hence an
+interpolation of the forward solve is required. This is provided by
+CVODES via a checkpointing procedure. In summary, we do heavily rely
+on CVODES infrastructure as these building blocks are rather complex
+and heavy to craft on our own.
 
 # Prior art
 [prior-art]: #prior-art
