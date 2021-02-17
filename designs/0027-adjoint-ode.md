@@ -185,7 +185,11 @@ sensitivities are requested, then we must solve along the backward
 problem an additional quadrature problem, which is the integrand in
 equation \@ref(eq:derivg).
 
-TODO: outline generalization to multiple time-points.
+So far we have only considered the case of a single time-point
+$T$. For multiple time-points one merely starts the backward
+integration from the last time-point and keeps accumulating the
+respective terms which result from integrating backwards in steps
+until $t_0$ is reached.
 
 In total we need to solve 3 integration problems which consist of a
 forward ODE problem, a backward ODE problem and a backward quadrature
@@ -204,6 +208,51 @@ Jacobian-vector products $\frac{df}{dy}\,v$, which we can compute
 directly using *forward mode*. In addition all 3 integration problems
 have their own relative and absolute tolerance targets.
 
+The propsed function should has the following signature:
+
+```stan
+vector[] ode_adjoint(F f,
+    vector y0,
+    real t0, real[] times,
+    real rel_tol_f, vector abs_tol_f,
+    real rel_tol_b, real abs_tol_b,
+    real rel_tol_q, real abs_tol_q,
+    int max_num_steps,
+    int num_checkpoints,
+    int interpolation_polynomial,
+    int solver_f, int solver_b
+    T1 arg1, T2 arg2, ...)
+```
+
+The arguments are:  
+1. ```f``` - User-defined right hand side of the ODE (`dy/dt = f`)  
+2. ```y0``` - Initial state of the ode solve (`y0 = y(t0)`)  
+3. ```t0``` - Initial time of the ode solve  
+4. ```times``` - Sorted arary of times to which the ode will be solved (each
+  element must be greater than t0)  
+5. ```rel_tol_f``` - Relative tolerance for forward solve (data)  
+6. ```abs_tol_f``` - Absolute tolerance vector for each state for
+   forward solve (data)  
+7. ```rel_tol_b``` - Relative tolerance for backward solve (data)  
+8. ```abs_tol_b``` - Absolute tolerance for backward solve (data)  
+9. ```rel_tol_q``` - Relative tolerance for backward quadrature (data)  
+10. ```abs_tol_q``` - Absolute tolerance for backward quadrature (data)  
+11. ```max_num_steps``` - Maximum number of timesteps to take in integrating
+  the ODE solution between output time points for forward and backward
+  solve (data)  
+12. ```num_checkpoints``` number of steps between checkpointing forward
+    solution (data)  
+13. ```interpolation_polynomial``` can be 1 for hermite or 2 for
+    polynomial interpolation method of CVODES  
+14. ```solver_f``` solver used for forward ODE problem: 1=Adams,
+    2=bdf, 3=bdf_iterated  
+15. ```solver_b``` solver used for backward ODE problem: 1=Adams,
+    2=bdf, 3=bdf_iterated  
+16. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
+hand side. The types ```T1, T2, ...``` can be any type, but they must match
+the types of the matching arguments of ```f```.
+
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
@@ -212,7 +261,10 @@ to my knowledge to get large ODE systems working in Stan. What we are
 missing out for now is to exploit the sparsity structure of the
 ODE. This would allow for more efficient solvers and even larger
 systems, but this is not possible at the moment to figure out
-structurally the inter-dependencies of inputs and outputs.
+structurally the inter-dependencies of inputs and outputs. However,
+the matrix free bdf method may already take advantage sufficiently
+enough of the sparsity, since in this case we avoid evaluation of the
+full Jacobian to some extent.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
@@ -235,23 +287,33 @@ and heavy to craft on our own.
 # Prior art
 [prior-art]: #prior-art
 
+The adjoint sensitivity method is not very widley used. It's somewhat
+present in engineering literature and found it's way into packages
+like `DifferentialEquations.jl` in Julia. Another noticeable reference
+is
+https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf
+and a discourse post from Ben
+https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16
+.
+
+Another domain where the adjoint sensitivity method is beind used is
+in systems biology. The (AMICI)[https://github.com/AMICI-dev/AMICI]
+toolkit has been build to solve ODE system for large scale systems
+biology equation systems to be used within optimizer software. The
+adjoint method is implemented in AMICI using CVODES and has been
+benchmarked on various problems from systems biology as
+(published)[https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005331]
+(see also (this arxiv pre-print)[https://arxiv.org/abs/2012.09122]).
+
 Discuss prior art, both the good and the bad, in relation to this proposal.
 A few examples of what this can include are:
 
-- For language, library, tools, and compiler proposals: Does this feature exist in other programming languages and what experience have their community had?
-- For community proposals: Is this done by some other community and what were their experiences with it?
-- For other teams: What lessons can we learn from what other communities have done here?
-- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
-
-This section is intended to encourage you as an author to think about the lessons from other languages, provide readers of your RFC with a fuller picture.
-If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or if it is an adaptation from other languages.
-
-Note that while precedent set by other languages is some motivation, it does not on its own motivate an RFC.
-Please also take into consideration that rust sometimes intentionally diverges from common language features.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- What parts of the design do you expect to resolve through the RFC process before this gets merged?
-- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
-- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
+The main unresolved question at this point is to settle on the set of
+exposed tuning parameters. Currently the proposal is to expose in an
+experimental version a large super-set of tuning parameters and ask
+the Stan community to experiment with it in order to weed out some
+tuning parameters if possible.
