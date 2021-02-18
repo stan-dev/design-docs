@@ -290,20 +290,17 @@ and heavy to craft on our own.
 The adjoint sensitivity method is not very widley used. It's somewhat
 present in engineering literature and found it's way into packages
 like `DifferentialEquations.jl` in Julia. Another noticeable reference
-is
-https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf
-and a discourse post from Ben
-https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16
-.
+is [FATODE](https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf)
+and a [discourse post from Ben](https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16).
 
 Another domain where the adjoint sensitivity method is beind used is
-in systems biology. The (AMICI)[https://github.com/AMICI-dev/AMICI]
+in systems biology. The [AMICI](https://github.com/AMICI-dev/AMICI)
 toolkit has been build to solve ODE system for large scale systems
 biology equation systems to be used within optimizer software. The
 adjoint method is implemented in AMICI using CVODES and has been
 benchmarked on various problems from systems biology as
-(published)[https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005331]
-(see also (this arxiv pre-print)[https://arxiv.org/abs/2012.09122]).
+[published](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005331)
+(see also [this arxiv pre-print](https://arxiv.org/abs/2012.09122)).
 
 Discuss prior art, both the good and the bad, in relation to this proposal.
 A few examples of what this can include are:
