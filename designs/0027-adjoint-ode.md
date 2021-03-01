@@ -208,14 +208,16 @@ Jacobian-vector products $\frac{df}{dy}\,v$, which we can compute
 directly using *forward mode*. In addition all 3 integration problems
 have their own relative and absolute tolerance targets.
 
-The propsed function should has the following signature:
+
+
+The proposed function should has the following signature:
 
 ```stan
-vector[] ode_adjoint(F f,
+vector[] ode_adjoint_tol_ctl(F f,
     vector y0,
     real t0, real[] times,
     real rel_tol_f, vector abs_tol_f,
-    real rel_tol_b, real abs_tol_b,
+    real rel_tol_b, vector abs_tol_b,
     real rel_tol_q, real abs_tol_q,
     int max_num_steps,
     int num_checkpoints,
@@ -234,7 +236,7 @@ The arguments are:
 6. ```abs_tol_f``` - Absolute tolerance vector for each state for
    forward solve (data)  
 7. ```rel_tol_b``` - Relative tolerance for backward solve (data)  
-8. ```abs_tol_b``` - Absolute tolerance for backward solve (data)  
+8. ```abs_tol_b``` - Absolute tolerance vector for each state backward solve (data)  
 9. ```rel_tol_q``` - Relative tolerance for backward quadrature (data)  
 10. ```abs_tol_q``` - Absolute tolerance for backward quadrature (data)  
 11. ```max_num_steps``` - Maximum number of timesteps to take in integrating
@@ -249,6 +251,37 @@ The arguments are:
 15. ```solver_b``` solver used for backward ODE problem: 1=Adams,
     2=bdf, 3=bdf_iterated  
 16. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
+hand side. The types ```T1, T2, ...``` can be any type, but they must match
+the types of the matching arguments of ```f```.
+
+In addition a function version is made available which mimics the
+existing ode interface for tolerances. This version will allow users
+to quickly try out the new adjoint interface. **The extra control
+parameters will be set based on best guesses as of now and are subject
+to change**:
+
+
+```stan
+vector[] ode_adjoint_tol(F f,
+    vector y0,
+    real t0, real[] times,
+    real rel_tol, real abs_tol,
+    int max_num_steps,
+    T1 arg1, T2 arg2, ...)
+```
+
+The arguments are:  
+1. ```f``` - User-defined right hand side of the ODE (`dy/dt = f`)  
+2. ```y0``` - Initial state of the ode solve (`y0 = y(t0)`)  
+3. ```t0``` - Initial time of the ode solve  
+4. ```times``` - Sorted arary of times to which the ode will be solved (each
+  element must be greater than t0)  
+5. ```rel_tol``` - Relative tolerance for all solves (data)  
+6. ```abs_tol``` - Absolute tolerance for all solves (data)  
+7. ```max_num_steps``` - Maximum number of timesteps to take in integrating
+  the ODE solution between output time points for forward and backward
+  solve (data)  
+8. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
 the types of the matching arguments of ```f```.
 
