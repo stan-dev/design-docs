@@ -14,10 +14,10 @@ implement in Stan the so-called forward-mode ODE method in order to
 obtain in addition to the solution of the ODE the sensitivities of the
 ODE. The cost of this method scales as 
 
-$$ N \cdot M . $$
+$$ N \cdot (M + 1). $$
 
-The computational cost of the adjoint method is much more favorable
-in comparison which is
+The computational cost of the adjoint method scales much more
+favorable in comparison which is
 
 $$ 2 \cdot N + M .$$
 
@@ -25,8 +25,12 @@ The advantage of the adjoint methods shows in particular whenever the
 number of parameters are relatively large in comparison to the number
 of states. Most importantly, the computational cost grows only
 linearly in the number of states and parameters (while forward grows
-exponentially). Thus, this method can scale to much larger problems
-without exponentially increasing computational cost.
+multiplicatively). Thus, this method can scale to much larger problems
+without a multiplicative increasing computational cost. However, the
+adjoint method is more involved resulting in a bigger overhead than
+the forward mode method. As a result, the forward method can
+have advantages for smaller ODE systems and as such both methods
+remain valuable within Stan.
 
 # Motivation
 [motivation]: #motivation
@@ -302,14 +306,16 @@ full Jacobian to some extent.
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-There is no other analytical technique available which scales in a
-comparable way. Hence, larger ODE problems ( many parameters and/or
-states) are currently out of scope for Stan and the adjoint technique
-does enable Stan to cope with these larger systems.
+There is no other analytical ODE solving technique available which scales in a
+comparable way. The better scalability of the adjoint method enables
+at a fixed computational ressource the possibility to solve larger ODE
+systems with many parameters and/or states to be solved faster. Thus,
+a Stan modeler can increase the complexity of an ODE model under study
+without subtantially increasing model runtimes.
 
-The numerical complexities are rather involved as 3 nested
-integrations are performed. This makes things somewhat fragile and
-less robust. What makes the backward integration in
+The numerical complexities of the adjoint method are rather involved
+as 3 nested integrations are performed. This makes things somewhat
+fragile and less robust. What makes the backward integration in
 particular involved is that the solution of the forward problem must
 be stored as a continuous function in memory and hence an
 interpolation of the forward solve is required. This is provided by
@@ -320,11 +326,13 @@ and heavy to craft on our own.
 # Prior art
 [prior-art]: #prior-art
 
-The adjoint sensitivity method is not very widley used. It's somewhat
-present in engineering literature and found it's way into packages
-like `DifferentialEquations.jl` in Julia. Another noticeable reference
-is [FATODE](https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf)
-and a [discourse post from Ben](https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16).
+The adjoint sensitivity method is applied in within different domains
+of science. For example the method is present in engineering
+literature and found it's way into packages like
+`DifferentialEquations.jl` in Julia. Another noticeable reference is
+[FATODE](https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf)
+and a [discourse post from
+Ben](https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16).
 
 Another domain where the adjoint sensitivity method is beind used is
 in systems biology. The [AMICI](https://github.com/AMICI-dev/AMICI)
@@ -335,9 +343,11 @@ benchmarked on various problems from systems biology as
 [published](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005331)
 (see also [this arxiv pre-print](https://arxiv.org/abs/2012.09122)).
 
-Discuss prior art, both the good and the bad, in relation to this proposal.
-A few examples of what this can include are:
-
+However, so far the adjoint method is commonly build into special
+purpose software as the method requires a fixed target
+functional. The integration of the adjoint ODE sensitivity method into
+a general puropse autodiff library as Stan math is presumably the
+first implementation of its kind.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
