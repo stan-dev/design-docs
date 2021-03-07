@@ -61,12 +61,17 @@ existing forward mode solvers will be that the gradients are not any
 more precomputed during the forward sweep of reverse mode autodiff
 (AD). Instead, during the forward sweep of reverse mode autodiff, the
 ODE is solved only for the N states (without any sensitivities). When
-reverse mode AD then performs the backward sweep, the adjoints of the
-input operands are directly computed given the input adjoints. This
-involves a backward solve in time with N states and solving $M$
-quadrature problems in addition.
+reverse mode AD then performs the backward sweep, the autodiff
+adjoints of the parameters of the ODE (input operands to the ODE
+function call) are directly computed given the parent autodiff
+adjoints as defined by the autodiff call graph. This calculation
+involves a backward solve of an adjoint ODE system with $N$ so-called
+ODE adjoint states as defined by the adjoint method and explained
+below. Along the backward integration of the ODE adjoint problem one
+has in addition to solve $M$ one-dimensional quadrature problems (one
+for each parameter of the ODE).
 
-The numerical complexity is higher for the adjoint method in
+The numerical complexity is higher for the ODE adjoint method in
 comparison to the forward method. While most of the complexity is
 handled by CVODES, the numerical procedure seems to require more
 knowledge about the tuning parameters. At least at the moment it
@@ -78,21 +83,31 @@ as proposed are:
 
 - absolute & relative tolerance forward solve; absolute tolerance
   should be a vector of length N, the number of states
-- absolute & relative tolerance backward solve
+- absolute & relative tolerance backward solve (for consistency the
+  absolute tolerances are given as vector)
 - absolute & relative tolerance quadrature problem
-- forward solver: bdf-dense / bdf-iterated / adams - 1 / 2 / 3
-- backward solver: bdf-dense / bdf-iterated / adams - 1 / 2 / 3
+- maximal number of steps between time-points; same for forward and
+  backward integration
+- forward solver: bdf / adams - 1 / 2 
+- backward solver: bdf / adams - 1 / 2 
 - checkpointing: number of checkpoints every X steps
 - checkpointing: hermite or polynomial approximation - 1 / 2
 
 During an experimental phase of this feature we can hopefully learn
-which of these are relevant and which can be dropped for a final
-release of the `ode_adjoint` function.
+which of these are relevant. In order to make it easy for users to
+switch their existing ODE problems to the new solver an
+`ode_adjoint_tol` function will be provided during the experimental
+phase. This function call follows the same conventions as the existing
+ode integrators. The tuning parameters set as default will be
+described below. The simplified call will be integrated into the main
+stan math library if users find this function helpful and a reasonable
+default for the tuning parameters can be found during the experimental
+phase.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-The adjoint method for ODEs is relatively involved mathematically. The
+The ODE adjoint method for ODEs is relatively involved mathematically. The
 main challenge comes from a mix of different notation and conventions
 used in different fields. Here we relate commonly used notation within
 Stan math to the [user guide of
@@ -100,7 +115,8 @@ CVODES](https://computing.llnl.gov/sites/default/files/public/cvs_guide-5.6.1.pd
 the underlying library we employ to handle the numerical
 solution. The goal of reverse mode autodiff is to calculate the
 derivative of some function $l(\theta)$ wrt. to it's parameters
-$\theta$ at some particular realization of $\theta$. The function $l$
+$\theta$ at some particular realization of $\theta$; here $\theta$
+denotes a set of parameters. The function $l$
 now depends on the solution of an ODE given as initial value problem
 
 \begin{align}
@@ -113,24 +129,29 @@ parametrized in terms of parameters $p$ which are a subset of
 $\theta$. Let's now further assume for simplicity that the function
 $l$ only depends on the solution of the ODE at the time-point
 $T$. During the reverse sweep of reverse mode autodiff we are then
-given the adjoints of $a_{l,y_n}$ wrt to the output state $y(T,p)$ which
+given the autodiff adjoints of $a_{l,y_n}$ wrt to the output state
+$y(T,p)$. These
 are the partials of $l$ wrt to each state
 
 $$ a_{l,y_n} = \left.\frac{\partial l}{\partial y_n}\right|_{t=T} $$
 
-and we must calculate the contribution to the adjoint of the parameters
+and we must calculate the contribution to the autodiff adjoint of the
+parameters
 
 $$ a_{l,p_m} = \sum_{n=1}^{N} \left. a_{l,y_n} \,  \frac{\partial y_n}{\partial p_m}\right|_{t=T}, $$
 
 which involves for each parameter $p_m$ the partial of every state
-$y_n$ wrt to the parameter $p_m$. Note that the computational benefit of the
-adjoint method stems from calculating the above sums *directly* in
-contrast to the forward method which calculates every partial
-$\left. \frac{\partial y_n}{\partial p_m}\right|_{t=T}$ separatley.
+$y_n$ wrt to the parameter $p_m$. Note that the computational benefit
+of the ODE adjoint method stems from calculating the above sums
+*directly* in contrast to the forward method which calculates every
+partial $\left. \frac{\partial y_n}{\partial p_m}\right|_{t=T}$
+separatley. In fact, the above sum is equal to a product of a
+row-vector of autodiff adjoints with the transpose of the Jacobian of
+the ODE solution wrt to the parameters at time $T$.
 
 In the notation of the CVODES user manual, the function $g(t,y,p)$
 **is equal to** $l(\theta)$ essentially. Through the use of Lagrange
-multipliers, the adjoint problem is transferred to a backward problem
+multipliers, the ODE adjoint problem is transferred to a backward problem
 in equation 2.20 of the CVODES manual ([see here for a step-by-step
 derivation](https://arxiv.org/abs/2002.00326)),
 
@@ -175,19 +196,20 @@ being subject to autodiff we see that
 
 $$\left(\frac{\partial g}{\partial y_n}\right)^*_{t=T} = a_{l,y_n}^*, $$
 
-which is the input we get during reverse mode autodiff (the conjugate
-transpose does not apply for Stan math using reals only).
+which is the input we get during reverse mode autodiff (the conjugation
+does not apply for Stan math using reals only).
 
 It is important to note that the backward ODE problem requires as
-input the adjoint $a_{l,y_n}^*$ such that the backward problem must be
-solved during the reverse pass of reverse mode autodiff. Thus, CVODES
-is used during the forward pass to *solve (forward)* the ODE in
-\@ref(eq:odeDef). Once the backward pass is initiated, the adjoints
-$a_{l,y_n}^*$ are used as the terminal value in order to solve the
-*backward problem* of \@ref(eq:muODE). Whenever any parameter
-sensitivities are requested, then we must solve along the backward
-problem an additional quadrature problem, which is the integrand in
-equation \@ref(eq:derivg).
+input the autodiff adjoint $a_{l,y_n}^*$ such that the backward
+problem must be solved during the reverse pass of reverse mode
+autodiff. Thus, CVODES is used during the forward pass to *solve
+(forward)* the ODE in \@ref(eq:odeDef). Once the backward pass is
+initiated, the autodiff adjoints $a_{l,y_n}^*$ are used as the
+terminal value in order to solve the *backward problem* of
+\@ref(eq:muODE). Whenever any parameter sensitivities are requested,
+then we must solve along the backward problem an additional
+one-dimensional quadrature problem per parameter of the ODE, which is
+the integrand in equation \@ref(eq:derivg).
 
 So far we have only considered the case of a single time-point
 $T$. For multiple time-points one merely starts the backward
@@ -200,18 +222,12 @@ forward ODE problem, a backward ODE problem and a backward quadrature
 problem. The forward ODE and the backward ODE problem can be solved
 with either a non-stiff Adams or a stiff BDF solver of CVODES (the
 choice is independent for each problem). For the Newton steps of the
-BDF routine a linear solver routine is required. The routine can
-either be a dense solver or an approximate iterative solver. As we
-target large ODE systems it can be useful to allow users to choose the
-solver being used. For example, whenever the number of ODE states is
-very large, then an iterative solver may be preferable. The reason is
-that the dense solver will require the calculation of the full
-Jacobian $\frac{df}{dy}$ of the ODE RHS in \@ref(eq:odeDef) wrt to the
-states $y$. In contrast, the iterative solver only needs to evaluate
-Jacobian-vector products $\frac{df}{dy}\,v$, which we can compute
-directly using *forward mode*. In addition all 3 integration problems
-have their own relative and absolute tolerance targets.
-
+BDF routine a linear solver routine is required for which a dense
+solver is used, but sparse solvers could be explored eventually
+(initial prototypes with a sparse solvers did not show any benefits,
+but further work is needed to fully assess this). In addition all 3
+integration problems have their own relative and absolute tolerance
+targets.
 
 
 The proposed function should has the following signature:
@@ -289,6 +305,16 @@ The arguments are:
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
 the types of the matching arguments of ```f```.
 
+The buest guesses based on preliminary experiments for the remaining
+tuning parameters are then set as
+
+- same relative tolerance in all problems
+- `abs_tol_f = abs_tol / 100`
+- `abs_tol_b = abs_tol / 10`
+- `abs_tol_q = abs_tol`
+- $250$ steps between checkpoints
+- bdf solver for forward and backward solve
+- polynomial method for forward function approximation
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -354,6 +380,14 @@ first implementation of its kind.
 
 The main unresolved question at this point is to settle on the set of
 exposed tuning parameters. Currently the proposal is to expose in an
-experimental version a large super-set of tuning parameters and ask
-the Stan community to experiment with it in order to weed out some
-tuning parameters if possible.
+experimental version a large super-set of tuning parameters and a
+version which resembles the enhanced interface with tolerances of the
+existing ODE solvers. This allows users to quickly try out the adjoint
+method by mereley changing a function name. The suggestion is to
+collect feedback from the Stan community duing an experimental phase
+of this feature. Once feedback on the utility of the simplifed
+interface and the appropiatness of the set defaults are collected a
+decision should be done about including this signature in a first
+version included in the next release. Another goal of the experimental
+phase is to explore the possiblity to weed out some tuing parameters
+if possible.
