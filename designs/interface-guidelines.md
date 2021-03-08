@@ -1,7 +1,11 @@
 - Feature Name: Interface Guidelines
 - Start Date: 2020-04-18
-- RFC PR: ??
+- RFC PR: 25
 - Stan Issue:
+
+*Note: This document from 2018 is being preserved as a design document. In meetings during 2018, RStan and PyStan developers agreed to the recommendations presented here. At the time, the developers intended to release PyStan 3 and RStan 3 at the same time. This plan has since been abandoned. PyStan 3 was released in March 2021 and follows these guidelines. With the exception of this notice, no edits have been made to this document since 2018. It is preserved here as it documents the design decisions present in PyStan 3. It was imported from the decommissioned Stan wiki in 2020.*
+
+---
 
 This page has recommendations on how users will use Stan to compile programs and draw samples. These recommendations are being implemented in "RStan 3" and "PyStan 3". This page is intended for developers of any user interfaces to Stan.
 
