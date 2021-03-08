@@ -1,4 +1,4 @@
-- Feature Name: Interface Guidelines
+- Feature Name: User Interface Guidelines for Developers
 - Start Date: 2020-04-18
 - RFC PR: 25
 - Stan Issue:
