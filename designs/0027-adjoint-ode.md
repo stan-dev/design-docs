@@ -6,10 +6,10 @@
 # Summary
 [summary]: #summary
 
-Ordinary differential equations (ODEs) are currently severly costly to
+Ordinary differential equations (ODEs) are currently severely costly to
 fit in Stan for larger systems. This is due to the multiplicative
-scaling of the required computing ressources with the ODE system size
-N and the number of parameters M defining the ODE. Currently we
+scaling of the required computing resources with the ODE system size
+$N$ and the number of parameters $M$ defining the ODE. Currently we
 implement in Stan the so-called forward-mode ODE method in order to
 obtain in addition to the solution of the ODE the sensitivities of the
 ODE. The cost of this method scales as 
@@ -37,28 +37,28 @@ remain valuable within Stan.
 
 Stan is currently practically limited to solve problems with ODEs
 which are small in the number of states and parameters. If either of
-them gets large, the computational cost explodes quickly. With the
+them gets large, the computational cost explode quickly. With the
 adjoint ODE solving method Stan will be able to scale to much larger
 problems involving more states and more parameters. Examples are large
 pharmacokinetic / pharmacodynamic systems or physiological based
 pharmacokinetic models or bigger susceptible infectious & removed
 models. The adjoint ODE method will grow the computational cost only
-linearly with states and parameters and therefore the modelers can
-more freely increase the complexity of the ODE model without having to
-worry too much about infeasible inference times.
+linearly with states and parameters and therefore modelers can
+more freely increase the complexity of the ODE model without
+substantially increasing inference times.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
 The new solver `ode_adjoint` will follow in it's design the variadic
 ODE functions. As the new solver is numerically more involved (see
-reference level) there are merely more tuning parameters needed for
-the solver. The actual impementation will be provided by the CVODES
+reference level) there are more tuning parameters needed for
+the solver. The actual implementation will be provided by the CVODES
 package which we already include in Stan.
 
 From a more internal stan math perspective, the key difference to the
 existing forward mode solvers will be that the gradients are not any
-more precomputed during the forward sweep of reverse mode autodiff
+more pre-computed during the forward sweep of reverse mode autodiff
 (AD). Instead, during the forward sweep of reverse mode autodiff, the
 ODE is solved only for the N states (without any sensitivities). When
 reverse mode AD then performs the backward sweep, the autodiff
@@ -82,14 +82,14 @@ available (if that is feasible at all). The tuning parameters exposed
 as proposed are:
 
 - absolute & relative tolerance forward solve; absolute tolerance
-  should be a vector of length N, the number of states
+  should be a vector of length $N$, the number of states
 - absolute & relative tolerance backward solve (for consistency the
   absolute tolerances are given as vector)
 - absolute & relative tolerance quadrature problem
 - maximal number of steps between time-points; same for forward and
   backward integration
-- forward solver: bdf / adams - 1 / 2 
-- backward solver: bdf / adams - 1 / 2 
+- forward solver: adams / bdf - 1 / 2 
+- backward solver: adams / bdf - 1 / 2 
 - checkpointing: number of checkpoints every X steps
 - checkpointing: hermite or polynomial approximation - 1 / 2
 
@@ -125,7 +125,7 @@ now depends on the solution of an ODE given as initial value problem
 \end{align}
 
 The ODE has $N$ states, $y=(y_1, \ldots, y_N)$, and is
-parametrized in terms of parameters $p$ which are a subset of
+parameterized in terms of parameters $p$ which are a subset of
 $\theta$. Let's now further assume for simplicity that the function
 $l$ only depends on the solution of the ODE at the time-point
 $T$. During the reverse sweep of reverse mode autodiff we are then
@@ -145,7 +145,7 @@ $y_n$ wrt to the parameter $p_m$. Note that the computational benefit
 of the ODE adjoint method stems from calculating the above sums
 *directly* in contrast to the forward method which calculates every
 partial $\left. \frac{\partial y_n}{\partial p_m}\right|_{t=T}$
-separatley. In fact, the above sum is equal to a product of a
+separately. In fact, the above sum is equal to a product of a
 row-vector of autodiff adjoints with the transpose of the Jacobian of
 the ODE solution wrt to the parameters at time $T$.
 
@@ -212,7 +212,7 @@ one-dimensional quadrature problem per parameter of the ODE, which is
 the integrand in equation \@ref(eq:derivg).
 
 So far we have only considered the case of a single time-point
-$T$. For multiple time-points one merely starts the backward
+$T$. For multiple time-points one starts the backward
 integration from the last time-point and keeps accumulating the
 respective terms which result from integrating backwards in steps
 until $t_0$ is reached.
@@ -221,16 +221,10 @@ In total we need to solve 3 integration problems which consist of a
 forward ODE problem, a backward ODE problem and a backward quadrature
 problem. The forward ODE and the backward ODE problem can be solved
 with either a non-stiff Adams or a stiff BDF solver of CVODES (the
-choice is independent for each problem). For the Newton steps of the
-BDF routine a linear solver routine is required for which a dense
-solver is used, but sparse solvers could be explored eventually
-(initial prototypes with a sparse solvers did not show any benefits,
-but further work is needed to fully assess this). In addition all 3
-integration problems have their own relative and absolute tolerance
-targets.
+choice is independent for each problem). Each of the 3 integration
+problems have their own relative and absolute tolerance targets.
 
-
-The proposed function should has the following signature:
+The proposed function should have the following signature:
 
 ```stan
 vector[] ode_adjoint_tol_ctl(F f,
@@ -240,7 +234,7 @@ vector[] ode_adjoint_tol_ctl(F f,
     real rel_tol_b, vector abs_tol_b,
     real rel_tol_q, real abs_tol_q,
     int max_num_steps,
-    int num_checkpoints,
+    int num_steps_between_checkpoints,
     int interpolation_polynomial,
     int solver_f, int solver_b
     T1 arg1, T2 arg2, ...)
@@ -259,17 +253,17 @@ The arguments are:
 8. ```abs_tol_b``` - Absolute tolerance vector for each state backward solve (data)  
 9. ```rel_tol_q``` - Relative tolerance for backward quadrature (data)  
 10. ```abs_tol_q``` - Absolute tolerance for backward quadrature (data)  
-11. ```max_num_steps``` - Maximum number of timesteps to take in integrating
+11. ```max_num_steps``` - Maximum number of time-steps to take in integrating
   the ODE solution between output time points for forward and backward
   solve (data)  
-12. ```num_checkpoints``` number of steps between checkpointing forward
+12. ```num_steps_between_checkpoints``` number of steps between checkpointing forward
     solution (data)  
 13. ```interpolation_polynomial``` can be 1 for hermite or 2 for
     polynomial interpolation method of CVODES  
 14. ```solver_f``` solver used for forward ODE problem: 1=Adams,
-    2=bdf, 3=bdf_iterated  
+    2=bdf  
 15. ```solver_b``` solver used for backward ODE problem: 1=Adams,
-    2=bdf, 3=bdf_iterated  
+    2=bdf  
 16. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
 the types of the matching arguments of ```f```.
@@ -294,18 +288,18 @@ The arguments are:
 1. ```f``` - User-defined right hand side of the ODE (`dy/dt = f`)  
 2. ```y0``` - Initial state of the ode solve (`y0 = y(t0)`)  
 3. ```t0``` - Initial time of the ode solve  
-4. ```times``` - Sorted arary of times to which the ode will be solved (each
+4. ```times``` - Sorted array of times to which the ode will be solved (each
   element must be greater than t0)  
 5. ```rel_tol``` - Relative tolerance for all solves (data)  
 6. ```abs_tol``` - Absolute tolerance for all solves (data)  
-7. ```max_num_steps``` - Maximum number of timesteps to take in integrating
+7. ```max_num_steps``` - Maximum number of time-steps to take in integrating
   the ODE solution between output time points for forward and backward
   solve (data)  
 8. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
 the types of the matching arguments of ```f```.
 
-The buest guesses based on preliminary experiments for the remaining
+The best guesses based on preliminary experiments for the remaining
 tuning parameters are then set as
 
 - same relative tolerance in all problems
@@ -314,7 +308,7 @@ tuning parameters are then set as
 - `abs_tol_q = abs_tol`
 - $250$ steps between checkpoints
 - bdf solver for forward and backward solve
-- polynomial method for forward function approximation
+- hermite polynomial method for forward function approximation
 
 # Drawbacks
 [drawbacks]: #drawbacks
@@ -324,20 +318,17 @@ to my knowledge to get large ODE systems working in Stan. What we are
 missing out for now is to exploit the sparsity structure of the
 ODE. This would allow for more efficient solvers and even larger
 systems, but this is not possible at the moment to figure out
-structurally the inter-dependencies of inputs and outputs. However,
-the matrix free bdf method may already take advantage sufficiently
-enough of the sparsity, since in this case we avoid evaluation of the
-full Jacobian to some extent.
+structurally the inter-dependencies of inputs and outputs.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
 There is no other analytical ODE solving technique available which scales in a
 comparable way. The better scalability of the adjoint method enables
-at a fixed computational ressource the possibility to solve larger ODE
+at a fixed computational resource the possibility to solve larger ODE
 systems with many parameters and/or states to be solved faster. Thus,
 a Stan modeler can increase the complexity of an ODE model under study
-without subtantially increasing model runtimes.
+without substantially increasing model runtimes.
 
 The numerical complexities of the adjoint method are rather involved
 as 3 nested integrations are performed. This makes things somewhat
@@ -352,15 +343,15 @@ and heavy to craft on our own.
 # Prior art
 [prior-art]: #prior-art
 
-The adjoint sensitivity method is applied in within different domains
-of science. For example the method is present in engineering
+The adjoint sensitivity method is applied within different domains
+of science. For example, the method is present in engineering
 literature and found it's way into packages like
 `DifferentialEquations.jl` in Julia. Another noticeable reference is
 [FATODE](https://www.mcs.anl.gov/~hongzh/publication/zhang-2014/SISC_FATODE_final.pdf)
 and a [discourse post from
 Ben](https://discourse.mc-stan.org/t/on-adjoint-sensitivity-of-ode-pde/5148/16).
 
-Another domain where the adjoint sensitivity method is beind used is
+Another domain where the adjoint sensitivity method is being used is
 in systems biology. The [AMICI](https://github.com/AMICI-dev/AMICI)
 toolkit has been build to solve ODE system for large scale systems
 biology equation systems to be used within optimizer software. The
@@ -372,7 +363,7 @@ benchmarked on various problems from systems biology as
 However, so far the adjoint method is commonly build into special
 purpose software as the method requires a fixed target
 functional. The integration of the adjoint ODE sensitivity method into
-a general puropse autodiff library as Stan math is presumably the
+a general purpose autodiff library as Stan math is presumably the
 first implementation of its kind.
 
 # Unresolved questions
@@ -383,11 +374,11 @@ exposed tuning parameters. Currently the proposal is to expose in an
 experimental version a large super-set of tuning parameters and a
 version which resembles the enhanced interface with tolerances of the
 existing ODE solvers. This allows users to quickly try out the adjoint
-method by mereley changing a function name. The suggestion is to
-collect feedback from the Stan community duing an experimental phase
-of this feature. Once feedback on the utility of the simplifed
-interface and the appropiatness of the set defaults are collected a
+method by merely changing a function name. The suggestion is to
+collect feedback from the Stan community during an experimental phase
+of this feature. Once feedback on the utility of the simplified
+interface and the appropriateness of the set defaults are collected a
 decision should be done about including this signature in a first
 version included in the next release. Another goal of the experimental
-phase is to explore the possiblity to weed out some tuing parameters
-if possible.
+phase is to explore the possibility to weed out some tuning parameters
+if possible or add others if needed.
