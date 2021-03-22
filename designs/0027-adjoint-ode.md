@@ -6,13 +6,13 @@
 # Summary
 [summary]: #summary
 
-Ordinary differential equations (ODEs) are currently severely costly to
-fit in Stan for larger systems. This is due to the multiplicative
+Ordinary differential equations (ODEs) are currently expensive to
+evaluate in Stan for larger systems. This is due to the multiplicative
 scaling of the required computing resources with the ODE system size
 $N$ and the number of parameters $M$ defining the ODE. Currently we
-implement in Stan the so-called forward-mode ODE method in order to
-obtain in addition to the solution of the ODE the sensitivities of the
-ODE. The cost of this method scales as 
+implement in Stan the forward-mode (direct) sensitivity ODE method in
+order to obtain in addition to the solution of the ODE the
+sensitivities of the ODE. The cost of this method scales as
 
 $$ N \cdot (M + 1). $$
 
@@ -41,9 +41,9 @@ them gets large, the computational cost explode quickly. With the
 adjoint ODE solving method Stan will be able to scale to much larger
 problems involving more states and more parameters. Examples are large
 pharmacokinetic / pharmacodynamic systems or physiological based
-pharmacokinetic models or bigger susceptible infectious & removed
-models. The adjoint ODE method will grow the computational cost only
-linearly with states and parameters and therefore modelers can
+pharmacokinetic models or bigger susceptible, infected, and recovered
+(SIR) models. The adjoint ODE method will grow the computational cost
+only linearly with states and parameters and therefore modelers can
 more freely increase the complexity of the ODE model without
 substantially increasing inference times.
 
@@ -68,8 +68,8 @@ adjoints as defined by the autodiff call graph. This calculation
 involves a backward solve of an adjoint ODE system with $N$ so-called
 ODE adjoint states as defined by the adjoint method and explained
 below. Along the backward integration of the ODE adjoint problem one
-has in addition to solve $M$ one-dimensional quadrature problems (one
-for each parameter of the ODE).
+has in addition to solve $M$ one-dimensional quadrature problems which
+depend on the adjoint states (one problem for each parameter of the ODE).
 
 The numerical complexity is higher for the ODE adjoint method in
 comparison to the forward method. While most of the complexity is
