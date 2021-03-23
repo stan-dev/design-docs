@@ -107,31 +107,31 @@ phase.
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-The ODE adjoint method for ODEs is relatively involved mathematically. The
-main challenge comes from a mix of different notation and conventions
-used in different fields. Here we relate commonly used notation within
-Stan math to the [user guide of
+The ODE adjoint method for ODEs is relatively involved
+mathematically. The main challenge comes from a mix of different
+notation and conventions used in different fields. Here we relate
+commonly used notation within Stan math to the [user guide of
 CVODES](https://computing.llnl.gov/sites/default/files/public/cvs_guide-5.6.1.pdf),
-the underlying library we employ to handle the numerical
-solution. The goal of reverse mode autodiff is to calculate the
-derivative of some function $l(\theta)$ wrt. to it's parameters
-$\theta$ at some particular realization of $\theta$; here $\theta$
-denotes a set of parameters. The function $l$
-now depends on the solution of an ODE given as initial value problem
+the underlying library we employ to handle the numerical solution. The
+goal of reverse mode autodiff is to calculate the derivative of some
+function $l(\theta)$ wrt. to it's parameters $\theta$ at some
+particular realization of $\theta$; here $\theta$ denotes a set of
+parameters. For example, the likelihood is defined as the normal log
+probability density for a single observation at time-point $T$. The
+mean of this normal log probability density is modelled as the
+solution of an ODE. The ODE itself depends on some parameters $p$
+which are a subset of $\theta$. The ODE is given as initial value
+problem
 
 \begin{align}
 \dot{y} &= f(y,t,p) (\#eq:odeDef) \\
  y(t_0) &= y^{(0)}. (\#eq:odeInitial)
 \end{align}
 
-The ODE has $N$ states, $y=(y_1, \ldots, y_N)$, and is
-parameterized in terms of parameters $p$ which are a subset of
-$\theta$. Let's now further assume for simplicity that the function
-$l$ only depends on the solution of the ODE at the time-point
-$T$. During the reverse sweep of reverse mode autodiff we are then
-given the autodiff adjoints of $a_{l,y_n}$ wrt to the output state
-$y(T,p)$. These
-are the partials of $l$ wrt to each state
+The ODE has $N$ states, $y=(y_1, \ldots, y_N)$. During the reverse
+sweep of reverse mode autodiff we are then given the autodiff adjoints
+of $a_{l,y_n}$ wrt to the output state $y(T,p)$. These are the
+partials of $l$ wrt to each state
 
 $$ a_{l,y_n} = \left.\frac{\partial l}{\partial y_n}\right|_{t=T} $$
 
@@ -268,12 +268,17 @@ The arguments are:
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
 the types of the matching arguments of ```f```.
 
-In addition a function version is made available which mimics the
-existing ode interface for tolerances. This version will allow users
-to quickly try out the new adjoint interface. **The extra control
-parameters will be set based on best guesses as of now and are subject
-to change**:
-
+In addition a simpler function version which mimics the existing ode
+interface for tolerances should be made available once more experience
+has been gained with the new ODE adjoint method. While at the current
+stage it is premature to make such a simpler interface available, the
+simpler interface is intended to let users quickly try out the new
+adjoint interface. **As it is currently not clear how the extra
+control parameters will be set based the function signature will not
+be made available in the Stan language in the first version of the
+adjoint ODE solver**. Nontheless, once sufficient experience has been
+gained with the adjoint ODE method the following signature should be
+made available:
 
 ```stan
 vector[] ode_adjoint_tol(F f,
@@ -303,12 +308,19 @@ The best guesses based on preliminary experiments for the remaining
 tuning parameters are then set as
 
 - same relative tolerance in all problems
-- `abs_tol_f = abs_tol / 100`
-- `abs_tol_b = abs_tol / 10`
+- `abs_tol_f = abs_tol / 10`
+- `abs_tol_b = abs_tol / 3`
 - `abs_tol_q = abs_tol`
 - $250$ steps between checkpoints
 - bdf solver for forward and backward solve
 - hermite polynomial method for forward function approximation
+
+The above best guesses are only based on early experiments and will
+need to be refined. This design doc intentionally does not define when
+"sufficient" experience has been collected until the simplified
+function can be made available. However, the above defaults (or an
+updated set) should be included in the documentation of the adjoint
+ODE solver.
 
 # Drawbacks
 [drawbacks]: #drawbacks
