@@ -230,7 +230,7 @@ The proposed function should have the following signature:
 vector[] ode_adjoint_tol_ctl(F f,
     vector y0,
     real t0, real[] times,
-    real rel_tol_f, vector abs_tol_f,
+    real relative_tolerance_forward, vector abs_tol_f,
     real rel_tol_b, vector abs_tol_b,
     real rel_tol_q, real abs_tol_q,
     int max_num_steps,
@@ -246,7 +246,7 @@ The arguments are:
 3. ```t0``` - Initial time of the ode solve  
 4. ```times``` - Sorted arary of times to which the ode will be solved (each
   element must be greater than t0)  
-5. ```rel_tol_f``` - Relative tolerance for forward solve (data)  
+5. ```relative_tolerance_forward``` - Relative tolerance for forward solve (data)  
 6. ```abs_tol_f``` - Absolute tolerance vector for each state for
    forward solve (data)  
 7. ```rel_tol_b``` - Relative tolerance for backward solve (data)  
@@ -331,6 +331,28 @@ missing out for now is to exploit the sparsity structure of the
 ODE. This would allow for more efficient solvers and even larger
 systems, but this is not possible at the moment to figure out
 structurally the inter-dependencies of inputs and outputs.
+
+Of note is that the adjoint ODE method is not efficient by
+construction to calculate the gradient wrt to multiple outputs as
+needed for a Jacobian. Since for each function output the gradient for
+all parameters must be calculated by resetting the adjoints back to
+zero and then rerunning the backward sweep of AD (chain method) once
+again. Hence, this triggers for each function output gradient a rerun
+of the backward integration problem, which is not needed for the
+forward ODE method.
+
+The proposed function signature restricts the absolute tolerances for
+the quadrature backward problem to be a scalar only as opposed to
+allowing for a vector absolute tolerance which assigns to each
+parameter qudarature problem it's own absolute tolerance. This
+simplifcation is made for usability reasons and the emprical
+observation that neither any CVODES example codes nor Julia's
+DifferentialEquations.jl package does facilitate a vector absolute
+tolerance for the backward quadrature integration. A user may work
+around this limitation by scaling the states and the parameters which
+will affect the order of the gradients accordingly and therefore
+change the tolerance checks of CVODES whenever a gradient approaches
+zero.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
