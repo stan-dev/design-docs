@@ -230,13 +230,13 @@ The proposed function should have the following signature:
 vector[] ode_adjoint_tol_ctl(F f,
     vector y0,
     real t0, real[] times,
-    real relative_tolerance_forward, vector abs_tol_f,
-    real rel_tol_b, vector abs_tol_b,
-    real rel_tol_q, real abs_tol_q,
+    real relative_tolerance_forward, vector absolute_tolerance_forward,
+    real relative_tolerance_backward, vector absolute_tolerance_backward,
+    real relative_tolerance_quadrature, real absolute_tolerance_quadrature,
     int max_num_steps,
     int num_steps_between_checkpoints,
     int interpolation_polynomial,
-    int solver_f, int solver_b
+    int solver_forward, int solver_backward
     T1 arg1, T2 arg2, ...)
 ```
 
@@ -247,12 +247,12 @@ The arguments are:
 4. ```times``` - Sorted arary of times to which the ode will be solved (each
   element must be greater than t0)  
 5. ```relative_tolerance_forward``` - Relative tolerance for forward solve (data)  
-6. ```abs_tol_f``` - Absolute tolerance vector for each state for
+6. ```absolute_tolerance_forward``` - Absolute tolerance vector for each state for
    forward solve (data)  
-7. ```rel_tol_b``` - Relative tolerance for backward solve (data)  
-8. ```abs_tol_b``` - Absolute tolerance vector for each state backward solve (data)  
-9. ```rel_tol_q``` - Relative tolerance for backward quadrature (data)  
-10. ```abs_tol_q``` - Absolute tolerance for backward quadrature (data)  
+7. ```relative_tolerance_backward``` - Relative tolerance for backward solve (data)  
+8. ```absolute_tolerance_backward``` - Absolute tolerance vector for each state backward solve (data)  
+9. ```relative_tolerance_quadrature``` - Relative tolerance for backward quadrature (data)  
+10. ```absolute_tolerance_quadrature``` - Absolute tolerance for backward quadrature (data)  
 11. ```max_num_steps``` - Maximum number of time-steps to take in integrating
   the ODE solution between output time points for forward and backward
   solve (data)  
@@ -260,9 +260,9 @@ The arguments are:
     solution (data)  
 13. ```interpolation_polynomial``` can be 1 for hermite or 2 for
     polynomial interpolation method of CVODES  
-14. ```solver_f``` solver used for forward ODE problem: 1=Adams,
+14. ```solver_forward``` solver used for forward ODE problem: 1=Adams,
     2=bdf  
-15. ```solver_b``` solver used for backward ODE problem: 1=Adams,
+15. ```solver_backward``` solver used for backward ODE problem: 1=Adams,
     2=bdf  
 16. ```arg1, arg2, ...``` - Arguments passed unmodified to the ODE right
 hand side. The types ```T1, T2, ...``` can be any type, but they must match
@@ -284,7 +284,7 @@ made available:
 vector[] ode_adjoint_tol(F f,
     vector y0,
     real t0, real[] times,
-    real rel_tol, real abs_tol,
+    real relative_tolerance, real absolute_tolerance,
     int max_num_steps,
     T1 arg1, T2 arg2, ...)
 ```
@@ -295,8 +295,8 @@ The arguments are:
 3. ```t0``` - Initial time of the ode solve  
 4. ```times``` - Sorted array of times to which the ode will be solved (each
   element must be greater than t0)  
-5. ```rel_tol``` - Relative tolerance for all solves (data)  
-6. ```abs_tol``` - Absolute tolerance for all solves (data)  
+5. ```relative_tolerance``` - Relative tolerance for all solves (data)  
+6. ```absolute_tolerance``` - Absolute tolerance for all solves (data)  
 7. ```max_num_steps``` - Maximum number of time-steps to take in integrating
   the ODE solution between output time points for forward and backward
   solve (data)  
@@ -308,9 +308,9 @@ The best guesses based on preliminary experiments for the remaining
 tuning parameters are then set as
 
 - same relative tolerance in all problems
-- `abs_tol_f = abs_tol / 10`
-- `abs_tol_b = abs_tol / 3`
-- `abs_tol_q = abs_tol`
+- `absolute_tolerance_forward = absolute_tolerance / 10`
+- `absolute_tolerance_backward = absolute_tolerance / 3`
+- `absolute_tolerance_quadrature = absolute_tolerance`
 - $250$ steps between checkpoints
 - bdf solver for forward and backward solve
 - hermite polynomial method for forward function approximation
