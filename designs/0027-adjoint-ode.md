@@ -236,7 +236,7 @@ vector[] ode_adjoint_tol_ctl(F f,
     int max_num_steps,
     int num_steps_between_checkpoints,
     int interpolation_polynomial,
-    int solver_forward, int solver_backward
+    int solver_forward, int solver_backward,
     T1 arg1, T2 arg2, ...)
 ```
 
