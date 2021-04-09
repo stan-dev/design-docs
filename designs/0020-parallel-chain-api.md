@@ -104,3 +104,17 @@ Then a [`tbb::parallel_for()`](https://github.com/stan-dev/stan/blob/147fba5fb93
 [drawbacks]: #drawbacks
 
 This does add overhead to existing implimentations in managing the per chain IO. Performance tests still need to be completed to assess the efficiency of nested parallelism (i.e. using `reduce_sum()`) inside of chains executing in parallel.
+
+
+### Open Questions
+
+The main open question is whether to recommend upstream users of services to generate N models or a single model
+whenever a Stan program uses `*_rng()` functions in transformed data for methods such as Simulation Based Calibration.
+With 1 model the transformed data will be shared across all chains. With SBC we commonly want to run multiple
+data sets and the question is whether we want multiple chains over one dataset or a chain for each data set.
+If we would like to have multiple models in one program if the user uses an `*_rng()` there is a [`stanc3 PR`](https://github.com/stan-dev/stanc3/pull/868) to add a method to check whether the user uses an rng function in
+tranformed data. Upstream service users can generate one model, then ask it if an rng is used in transformed data
+to decide whether it wants to generate N more models.
+
+Personally, I think it makes since to run multiple chains for each generated dataset (having 1 model).
+This makes sense to me as we can check for recovery of parameters given K datasets and N chains per dataset.
