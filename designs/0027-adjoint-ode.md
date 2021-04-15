@@ -349,10 +349,15 @@ simplifcation is made for usability reasons and the emprical
 observation that neither any CVODES example codes nor Julia's
 DifferentialEquations.jl package does facilitate a vector absolute
 tolerance for the backward quadrature integration. A user may work
-around this limitation by scaling the states and the parameters which
-will affect the order of the gradients accordingly and therefore
-change the tolerance checks of CVODES whenever a gradient approaches
-zero.
+around this limitation to some extent by scaling the states and the
+parameters which will affect the order of the gradients accordingly
+and therefore change the tolerance checks of CVODES whenever a
+gradient approaches zero. As the lack of the feature of a vector
+absolute tolerance for the parameter quadratures may potentially pose
+a limitation for future uses of the adjoint ODE solver, the
+implementation in stan-math should be written in an manner allowing
+for an inclusion of this feature at a later time (for example through
+an overload of the proposed signature).
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
