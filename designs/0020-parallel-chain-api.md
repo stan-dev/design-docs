@@ -61,10 +61,10 @@ int hmc_nuts_dense_e_adapt(
     std::vector<InitWriter>& init_writer,
     std::vector<SampleWriter>& sample_writer,
     std::vector<DiagnosticWriter>& diagnostic_writer,
-    size_t n_chain)
+    size_t num_chains)
 ```
 
-Additionally the new API has an argument `n_chain` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `n_chain`. For optional flexibility, `InitContext` and `InitInvContext` can either be any type inheriting from `stan::io::var_context` or either `std::shared_ptr<>` or `std::unique_ptr<>` with an underlying pointer whose type is derived from `stan::io::var_context`. Within the new API these arguments are accessed through a function `stan::io::get_underlying(const T& x)` which for any of the above inputs returns a reference to the object inheriting from `stan::io::var_context`. For upstream APIs such as rstan which uses `Rcpp` this function can be overloaded to support smart pointers such as `Rcpp::Xptr`.
+Additionally the new API has an argument `num_chains` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `num_chains`. For optional flexibility, `InitContext` and `InitInvContext` can either be any type inheriting from `stan::io::var_context` or either `std::shared_ptr<>` or `std::unique_ptr<>` with an underlying pointer whose type is derived from `stan::io::var_context`. Within the new API these arguments are accessed through a function `stan::io::get_underlying(const T& x)` which for any of the above inputs returns a reference to the object inheriting from `stan::io::var_context`. For upstream APIs such as rstan which uses `Rcpp` this function can be overloaded to support smart pointers such as `Rcpp::Xptr`.
 
 ```cpp
 namespace stan {
