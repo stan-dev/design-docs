@@ -11,7 +11,7 @@ This outlines a services layer API for running multiple chains in one Stan progr
 # Motivation
 [motivation]: #motivation
 
-Currently, to run multiple chains for a given model a user or developer must use higher level parallelization tools such as `gnu parallel` or R/Python parallelism schemes. However, we have access to the TBB and with it a schedular for managing hierarchical parallelism. We can utilize the TBB to provide service API's for running multiple chains in one program and safely account for possible parallelism within a model using tools such as `reduce_sum()`.
+Currently, to run multiple chains for a given model a user or developer must use higher level parallelization tools such as `gnu parallel` or R/Python parallelism schemes. The high level approach is partly done because of intracacies at the lower level around managing Stan's thread local stack allocators along with multi-threaded IO. Providing a service layer API for multiple chains in one Stan program will remove the requirment of interfaces to impliment all the necessary tools for parallel chains in one Stan program independently. Moreover, we have access to the TBB and with it a schedular for managing hierarchical parallelism. We can utilize the TBB to provide service API's for running multiple chains in one program and safely account for possible parallelism within a model using tools such as `reduce_sum()`.
 
 The benefits to this scheme are mostly in memory savings and standardization of multi chain processes in Stan. Because a stan model is immutable after construction it's possible to share that model across all chains. For a model that uses 1GB of data running 8 chains in parallel means we use 8GB of RAM. However by sharing the model across the chains we simply use 1GB of data.
 
@@ -42,10 +42,11 @@ int hmc_nuts_dense_e_adapt(
 ```
 
 ```cpp
-template <class Model, typename InitContext, typename InitInvContext,
+template <typename Model, typename InitContext, typename InitInvContext,
           typename InitWriter, typename SampleWriter, typename DiagnosticWriter>
 int hmc_nuts_dense_e_adapt(
     Model& model,
+    size_t num_chains,
     // now vectors
     const std::vector<InitContext>& init,
     const std::vector<InitInvContext>& init_inv_metric,
@@ -60,24 +61,10 @@ int hmc_nuts_dense_e_adapt(
     // now vectors
     std::vector<InitWriter>& init_writer,
     std::vector<SampleWriter>& sample_writer,
-    std::vector<DiagnosticWriter>& diagnostic_writer,
-    size_t num_chains)
+    std::vector<DiagnosticWriter>& diagnostic_writer)
 ```
 
-Additionally the new API has an argument `num_chains` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `num_chains`. For optional flexibility, `InitContext` and `InitInvContext` can either be any type inheriting from `stan::io::var_context` or either `std::shared_ptr<>` or `std::unique_ptr<>` with an underlying pointer whose type is derived from `stan::io::var_context`. Within the new API these arguments are accessed through a function `stan::io::get_underlying(const T& x)` which for any of the above inputs returns a reference to the object inheriting from `stan::io::var_context`. For upstream APIs such as rstan which uses `Rcpp` this function can be overloaded to support smart pointers such as `Rcpp::Xptr`.
-
-```cpp
-namespace stan {
-namespace io {
-template <typename T>
-const auto& get_underlying(const Rcpp::Xptr<T>& x) {
-  return *x;
-}
-}
-}
-```
-
-This scheme allows for flexibility, where a user can pass one initialization for all chains and the program can make one shared pointer used in all instances of the vector.
+Additionally the new API has an argument `num_chains` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `num_chains`. `InitContext` and `InitInvContext` must have a valid `operator*` which returns back a reference to a class derived from `stan::io::var_context`.
 
 The elements of the vectors for `init`, `init_inv_metric`, `interrupt`, `logger`, `init_writer`, `sample_writer`, and `diagnostic_writer` must be threadsafe. `init` and `init_inv_metric` are only read from so should be threadsafe by default. Any of the writers which write to `std::cout` are safe by the standard, though it is recommended to write any output to an local `std::stringstream` and then pass the fully constructed output so that thread outputs are not mixed together. See the code [here](https://github.com/stan-dev/stan/pull/3033/files#diff-ab5eb0683288927defb395f1af49548c189f6e7ab4b06e217dec046b0c1be541R80) for an example. Additionally if the elements of `init_writer`, `sample_writer`, and `diagnostic_writer` each point to unique output they will be threadsafe as well.
 
@@ -98,6 +85,12 @@ Then a [`tbb::parallel_for()`](https://github.com/stan-dev/stan/blob/147fba5fb93
 Upstream packages can generate `init` and `init_inv_metric` as they wish, though for cmdstan the prototype follows the following rules for reading user input.
 
 If the user specifies their init as `{file_name}.{file_ending}` with an input `id` of `N` and chains `M` then the program will search for `{file_name}_{N..(N + M)}.{file_ending}` where `N..(N + M)` is a linear integer sequence from `N` to `N + M`. If the program fails to find any of the `{file_name}_{N..(N + M)}.{file_ending}` it will then search for `{file_name}.{file_ending}` and if found will use that. Otherwise an exception will occur.
+
+For example, if a user specifies `chains=4`, `id=2`, and their init file as `init=init.data.R` then the program
+will first search for `init.data_2.R` and if it finds it will then search for `init.data_3.R`,
+`init.data_4.R`, `init.data_5.R` and will fail if all files are not found. If the program fails to find `init.data_2.R` then it will attempt
+to find `init.data.R` and if successfull will use these initial values for all chains. If neither
+are found then an error will be thrown.
 
 Documentation must be added to clarify reproducibility between a multi-chain program and running multiple chains across several programs. This requires
 
@@ -124,17 +117,3 @@ examples/bernoulli/bernoulli sample data file=examples/bernoulli/bernoulli.data.
 [drawbacks]: #drawbacks
 
 This does add overhead to existing implimentations in managing the per chain IO.
-
-
-### Open Questions
-
-The main open question is whether to recommend upstream users of services to generate N models or a single model
-whenever a Stan program uses `*_rng()` functions in transformed data for methods such as Simulation Based Calibration.
-With 1 model the transformed data will be shared across all chains. With SBC we commonly want to run multiple
-data sets and the question is whether we want multiple chains over one dataset or a chain for each data set.
-If we would like to have multiple models in one program if the user uses an `*_rng()` there is a [`stanc3 PR`](https://github.com/stan-dev/stanc3/pull/868) to add a method to check whether the user uses an rng function in
-tranformed data. Upstream service users can generate one model, then ask it if an rng is used in transformed data
-to decide whether it wants to generate N more models.
-
-Personally, I think it makes since to run multiple chains for each generated dataset (having 1 model).
-This makes sense to me as we can check for recovery of parameters given K datasets and N chains per dataset.
