@@ -6,7 +6,9 @@ output:
 
 # Complex Numbers Functional Specification
 
-This is a proposal for adding complex number, vector, and matrix types to the Stan language. This involves proposals for
+This is a proposal for adding complex scalar, vector, and matrix types to the Stan language.
+
+This involves proposals for
 
 - language types, constructors, and accessors
 - I/O format for the generated C++ model class
@@ -15,14 +17,17 @@ This is a proposal for adding complex number, vector, and matrix types to the St
 
 This proposal is backed by a full implementation of the [C++ complex number standard](https://en.cppreference.com/w/cpp/header/complex) in the Stan math library. 
 
-At their heart, complex numbers are nothing more than pairs of real numbers with a bunch of special functions defined over them.
+## Quick overview of complex numbers
 
+A complex number $z = x + yi$ is uniquely defined by a pair $(x, y)$ of real numbers, with $i$ being the imaginary unit $\sqrt{-1}$.  The complex number $z = x + yi$ is said to have a real component $x$ and imaginary component $y$.
+
+The basic arithmetic and matrix operators extend to complex numbers as expected, given the reduction $i^2 = -1.$.  Other functions, such as sine and logarithm, have more complicated extensions to the complex domain.  C++ provides support for complex numbers through its `<complex>` header, which defines all of the basic mathematical operations on complex numbers.
 
 ## Goals
 
-- The goal of this feature is to allow users to code models involving complex numbers.
+The goal of this feature is to allow users to code models involving complex numbers.  The reason we want to extend Stan to complex numbers is that many statistical problems are most naturally formulated in the complex domain.  For example, in imaging applications such as magnetic resonance imaging (MRI) and cryo electron microscopy (cryo-em), we do not observe an image, but only the magnitude (or modulus) of its discrete Fourier transform.  This is naturally a problem that requires a complex FFT operation.  Similarly, eigendecomposition of asymmetric matrices is fundamentally a complex operation, as is Schur decomposition.  Stationarity conditions for time-series models are often stated in terms of conditions on the magnitudes of complex roots.
 
-- The goal of this document is to be precise enough that
+The goal of this document is to be precise enough that
     - users can understand the feature well enough to evaluate it, and
     - developers can work on a technical specification for the implementation.
 
@@ -47,11 +52,24 @@ At their heart, complex numbers are nothing more than pairs of real numbers with
 The following four basic data types will handle all of the complex number functionality we need:
 
 - `complex`:  scalar type
-- `complex_vector`: vector of complex values
-- `complex_row_vector`: row vector of complex values
-- `complex_matrix`: matrix of complex values
+- `complex_vector[N]`: vector of complex values
+- `complex_row_vector[M]`: row vector of complex values
+- `complex_matrix[M, N]`: matrix of complex values
 
 As usual, arrays can be constructed from any of these types.
+
+### Constrained data types [Optional]
+
+Lower and upper bounds could be construed as bounds on absolute value (or modulus) of a complex number, with
+```
+complex<lower = 1> z;
+```
+requiring `modulus(z) > 1`, where $\mod x + yi = \sqrt{x^2 + y^2}.$  Upper bounds and mixed upper and lower bounds work the same way.  The bounds are real valued.
+
+Lower and upper bound constraints can be applied to any of the complex types.
+
+This feature is included for completeness, but marked "optional" because it is not clear it will be useful as realistic complex constraints are typically multivariate.
+
 
 ### Constructors
 
@@ -60,10 +78,10 @@ A complex number is constructed from a pair of real numbers, one representing th
 ```
 real r;
 real i;
-complex z = to_complex(r, i);
+complex z = complex(r, i);
 ```
 
-This is very verbose, but we don't want to use just `complex(r, i)` because we don't want functions confused with types.  We could use a simple pair structure instead of `to_complex(r, i)`, such as `{ r, i }`, `<r, i>`, or `[r, i]`, but these notations are already used for arrays, constraints, and row vectors respectively.  Or we could use an ad-hoc abbreviation like `cmplx(r, i)`, but that's hard to remember and we elsewhere try to avoid abbreviations where possible.
+This overloads the type name in the same way as a C++ constructor.  `to_complex` seems too wordy and `cmplx` too cryptic.
 
 ### Accessor lvalues
 
@@ -76,7 +94,9 @@ real r = z.real;
 real i = z.imag;
 ```
 
-This follows the C++, Java, and Python conventions for accessing components of structures (including tuples).  It uses the C++ standard library's naming convention for the components.  We could instead use a function-like accessor notation, such as `z.real()`, but that feels less clear that it can be used an lvalue.  
+This follows the C++, Java, and Python conventions for accessing components of structures (including tuples), which is also Stan's proposal for implementing tuple accessors.
+
+It uses the C++ standard library's naming convention for the components.
 
 These accessors work as lvalues, so that the following will be allowed
 
@@ -86,11 +106,13 @@ complex z;
 z.real = 5.2;
 ```
 
-with the result being that `z` now has 5.2 as its real component---that is, it's a destructive operation.
+with the result being that `z` now has 5.2 as its real component.
+
+This behavior mirrors Stan's design for tuples.
 
 ### Equality
 
-Equality is defined component-wise, so that `z1 == z2` for complex typed variables `z1` and `z2` is true if `z1.real == z2.real` and `z1.imag == z2.imag`.  
+Equality for scalars is defined component-wise, so that `z1 == z2` for complex typed variables `z1` and `z2` is true if `z1.real == z2.real` and `z1.imag == z2.imag`.  
 
 ```
 complex z1;
@@ -98,11 +120,11 @@ complex z2;
 int a = (z1 == z2);
 ```
 
-Note that this imports all of the usual difficulties of comparing floating-point numbers. Testing for equality of floating point and hence complex numbers should be avoided if possible.
+Note that this imports all of the usual difficulties of comparing floating-point numbers. Testing for equality of floating point and hence complex numbers should be avoided if possible.  Because of promotion, equality can apply to complex numbers mixed with real or integers.
 
 ### Promotion and function arguments
 
-Currently in Stan, function arguments work like assignment.  You can use a variable for a function argument if and only if it could be assigned to a variable of the type of that argument.  
+Currently in Stan, function argument types work like the type of an lvalue in an assignment.  An expression can be passed to a function as an argument of type `T` if the expression could be assigned to an argument of type `T`.  
 
 Currently Stan allows promotion of `int` values to `real` values but not vice-versa, so that 
 
@@ -137,7 +159,7 @@ int a = z;  // ILLEGAL
 real b = z;  // ILLEGAL
 ```
 
-As of now, there is no general promotion for arrays, and there are only real-valued matrices.  With the introduction of complex-valued vectors and matrices, we need to support assignment of real-valued vectors and matrices to their complex counterparts.  That is,
+As of now, there is no general promotion for arrays, and there are only real-valued matrices.  With the introduction of complex-valued vectors and matrices, Stan will need to support assignment of real-valued vectors and matrices to their complex counterparts.  That is,
 
 ```
 real_matrix[2, 3] x;
@@ -163,7 +185,7 @@ All of the standard arithmetic operators, `+`, `-`, `*`, `/` and unary `-`, will
 
 ### Matrix arithmetic operators
 
-The plan is to roll out support for all of the standard matrix arithmetic operators including all of the scalar operators as well as the left and right residuation operators (`\` and `/`).  Like their scalar counterparts, these will allow mixing of complex and real arguments with complex results.  These are implemented in the Stan math library.
+The plan is to roll out support for all of the standard matrix arithmetic operators including all of the scalar operators as well as the left and right residuation operators (`\` and `/`).  Like their scalar counterparts, these will allow mixing of complex and real arguments with complex results.  These are implemented in the Stan math library. Like with the real-valued matrices, Stan also allows broadcasting of scalar arguments, so that `complex_vector + complex` should be defined to add the complex scalar to each element of the complex vector.  
 
 ### Matrix and array constructors
 
@@ -208,7 +230,7 @@ complex z1;  complex z2;
 complex z[5] = {z1, z2, z3, 1, 2.8};
 ```
 
-As with vectors, promotion to the highest type will be carried out for array construction.
+As with vectors, promotion to the richest type found for an element will be carried out for array, vector, and matrix construction.
 
 
 ### Elementwise operators
@@ -244,6 +266,7 @@ Parameters are output as an array.  Complex numbers will be sequenced with their
 
 For containers of complex numbers, the natural order is to indicate container indexing first.  For example, an entry for a matrix might look like `z.2.3.r` for the real component of the complex element at row 2 and column 3.
 
+
 ## File I/O formats
 
 We have file-based output for samples and structured JSON or R dump format for input.  We use the same format for specifying data, initial values, etc., so there is only one format needed that will work for all of the interface needs.
@@ -252,7 +275,7 @@ We have file-based output for samples and structured JSON or R dump format for i
 
 CmdStan output just mirrors the C++ class output and will write headers the same way they are produced by the C++ class.
 
-## JSON input
+### JSON input
 
 The key design aspect here is that we know when we want to read an array and know when we want to read complex numbers.  So we do not need to encode the complex/non-complex distinction directly in the output structure.  Specifically, we will follow the example in the 
 [Python JSON spec](https://docs.python.org/3/library/json.html), which encodes a complex number `3 - 1.5j` as the list `[3, -1.5]`.  
@@ -265,7 +288,7 @@ A self-documenting JSON format might look like this,
 
 but that's going to be far too verbose.
 
-## R dump format input
+### R dump format input
 
 We can adopt the standard R dump format for complex number output, which separates the real and imaginary component with the 
 
@@ -284,23 +307,48 @@ It might be tempting to try to decompose types as C++ does, for example using `m
 
 For example, complex numbers do *not* work with constraints.  It does not make sense to write `complex<lower = 0> z` or `complex<offset = 7>`.  
 
-There are not good alternatives to these proposals that would differ in things other than minor details.
+### Full covariance
 
 The biggest issue is how much covariance do we want to support given that it's not yet fully supported for `int` and `real`.  For example, it'd be nice to allow assignment of `int[]` to `real[]` and of `real[]` to `complex[]`.
 
+### Constructor alternatives
+
+We could use a simple pair structure instead of `complex(r, i)`, such as `{ r, i }`, `<r, i>`, or `[r, i]`, e.g.,
+```
+complex z = { r, i };
+```
+but these notations are already used for arrays, constraints, and row vectors respectively.
+
+
+### Accessor alternatives 
+
+For accessors, we could use method-like notation, such as `z.real()`, but Stan does not use this kind of object-oriented notation elsewhere and it is less clear that the result can be used an lvalue.
+
+### Offset and multiplier addition
+
+In addition to lower and upper bound constraints, it'd be possible to use complex offsets and multipliers, 
+```
+complex<offset = o, multiplier = m> z;
+```
+Here, the offset and multiplier could be complex scalars or real scalars or integers.
+
+
 ## Prior art
 
-The prior art this proposal draws on includes:
+The prior art this proposal draws on includes
 
-* Stan's existing handling of promotion of `int` to `real`
-* Stan's existing container constructors
-* Stan's existing I/O formats for R and JSON
-* Stan's existing output format for the C++ model class
-* the C++ data type `complex` and associated operations from the `<complex>` header in the standard library
-* R's standard dump format for complex numbers
-* Python encodings of complex numbers and example of extending JSON to complex numbers
+* Stan's existing handling of promotion of `int` to `real`,
+* Stan's existing container constructors,
+* Stan's tuple proposal currently being implemented,
+* Stan's existing I/O formats for R and JSON,
+* Stan's existing output format for the C++ model class,
+* the C++ data type `complex` and associated operations from the `<complex>` header in the standard library,
+* the Eigen C++ matrix library's handling of complex scalars, vectors, and matrices,
+* R's standard dump format for complex numbers, and
+* Python encodings of complex numbers and example of extending JSON to complex numbers.
 
 This proposal follows all of this prior art directly.
+
 
 
 
