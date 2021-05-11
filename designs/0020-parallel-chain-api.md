@@ -42,14 +42,14 @@ int hmc_nuts_dense_e_adapt(
 ```
 
 ```cpp
-template <typename Model, typename InitContext, typename InitInvContext,
+template <typename Model, typename InitContextPtr, typename InitInvContextPtr,
           typename InitWriter, typename SampleWriter, typename DiagnosticWriter>
 int hmc_nuts_dense_e_adapt(
     Model& model,
     size_t num_chains,
     // now vectors
-    const std::vector<InitContext>& init,
-    const std::vector<InitInvContext>& init_inv_metric,
+    const std::vector<InitContextPtr>& init,
+    const std::vector<InitInvContextPtr>& init_inv_metric,
     unsigned int random_seed, unsigned int init_chain_id, double init_radius,
     int num_warmup, int num_samples, int num_thin, bool save_warmup,
     int refresh, double stepsize, double stepsize_jitter, int max_depth,
@@ -64,7 +64,7 @@ int hmc_nuts_dense_e_adapt(
     std::vector<DiagnosticWriter>& diagnostic_writer)
 ```
 
-Additionally the new API has an argument `num_chains` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `num_chains`. `InitContext` and `InitInvContext` must have a valid `operator*` which returns back a reference to a class derived from `stan::io::var_context`.
+Additionally the new API has an argument `num_chains` which tells the backend how many chains to run and `init_chain_id` instead of `chain`. `init_chain_id` will be used to generate PRNGs for each chain as `seed + init_chain_id + chain_num` where `chain_num` is the i'th chain being generated. All of the vector inputs must be the same size as `num_chains`. `InitContextPtr` and `InitInvContextPtr` must have a valid `operator*` which returns back a reference to a class derived from `stan::io::var_context`.
 
 The elements of the vectors for `init`, `init_inv_metric`, `interrupt`, `logger`, `init_writer`, `sample_writer`, and `diagnostic_writer` must be threadsafe. `init` and `init_inv_metric` are only read from so should be threadsafe by default. Any of the writers which write to `std::cout` are safe by the standard, though it is recommended to write any output to an local `std::stringstream` and then pass the fully constructed output so that thread outputs are not mixed together. See the code [here](https://github.com/stan-dev/stan/pull/3033/files#diff-ab5eb0683288927defb395f1af49548c189f6e7ab4b06e217dec046b0c1be541R80) for an example. Additionally if the elements of `init_writer`, `sample_writer`, and `diagnostic_writer` each point to unique output they will be threadsafe as well.
 
