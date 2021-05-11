@@ -80,6 +80,22 @@ The services API on the backend has a prototype implementation found [here](http
 
 Then a [`tbb::parallel_for()`](https://github.com/stan-dev/stan/blob/147fba5fb93aa007ec42744a36d97cc84c291945/src/stan/services/sample/hmc_nuts_dense_e_adapt.hpp#L261) is used to run the each of the samplers.
 
+PRNGs will be initialized such as the following pseudocode, where a constant stride is used to initialize the PRNG.
+
+```cpp
+inline boost::ecuyer1988 create_rng(unsigned int seed, unsigned int init_chain_id, unsigned int chain_num) {
+  // Initialize L’ecuyer generator
+  boost::ecuyer1988 rng(seed);
+
+  // Seek generator to disjoint region for each chain
+  static uintmax_t DISCARD_STRIDE = static_cast<uintmax_t>(1) << 50;
+  rng.discard(DISCARD_STRIDE * (init_chain_id + chain_num - 1));
+  return rng;
+}
+```
+
+The constant stride guarantees that models which use multiple chains in one program and multiple programs using multiple chains are able to be reproducible given the same seed as noted below.  
+
 ### Recommended Upstream Initialization
 
 Upstream packages can generate `init` and `init_inv_metric` as they wish, though for cmdstan the prototype follows the following rules for reading user input.
@@ -89,7 +105,7 @@ If the user specifies their init as `{file_name}.{file_ending}` with an input `i
 For example, if a user specifies `chains=4`, `id=2`, and their init file as `init=init.data.R` then the program
 will first search for `init.data_2.R` and if it finds it will then search for `init.data_3.R`,
 `init.data_4.R`, `init.data_5.R` and will fail if all files are not found. If the program fails to find `init.data_2.R` then it will attempt
-to find `init.data.R` and if successfull will use these initial values for all chains. If neither
+to find `init.data.R` and if successful will use these initial values for all chains. If neither
 are found then an error will be thrown.
 
 Documentation must be added to clarify reproducibility between a multi-chain program and running multiple chains across several programs. This requires
@@ -111,9 +127,18 @@ examples/bernoulli/bernoulli sample data file=examples/bernoulli/bernoulli.data.
 examples/bernoulli/bernoulli sample data file=examples/bernoulli/bernoulli.data.R chains=1 id=4 random seed=123 output file=output4.csv
 ```
 
+In general the constant stride allow for the following where `n1 + n2 + n3 + n4 = N` chains.
+
+```
+seed=848383, id=1, chains=n1
+seed=848383, id=1 + n1, chains=n2
+seed=848383, id=1 + n1 + n2, chains=n3
+seed=848383, id=1 + n1 + n2 + n3, chains=n4
+```
+
 
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
-This does add overhead to existing implimentations in managing the per chain IO.
+This does add overhead to existing implementations in managing the per chain IO.
