@@ -6,171 +6,187 @@
 # Summary
 [summary]: #summary
 
-I intend to add many quantile functions to Stan Math, at least for univariate continuous probability distributions, that would eventually be exposed in the Stan language. For a univariate continuous probability distribution, the quantile function is the inverse of the Cumulative Density Function (CDF), i.e. the quantile function is an increasing function from [0,1] to the parameter space, Θ. The quantile function can be used to _define_ a probability distribution, although for many well-known probability distributions (e.g. the standard normal) the quantile function cannot be written as an explicit function.
+I intend to add many quantile functions to Stan Math for univariate continuous probability distributions that would eventually be exposed in the Stan language. For a univariate continuous probability distribution, the quantile function is the inverse of the Cumulative Density Function (CDF), i.e. the quantile function is an increasing function from a cumulative probability on [0,1] to the parameter space, Θ. The quantile function can be used to _define_ a probability distribution, although for many well-known probability distributions (e.g. the standard normal), the quantile function cannot be written as an explicit function. The partial derivative of a quantile function with respect to the cumulative probability is called the quantile density function, which is also needed in Stan Math but probably is not be worth exposing in the Stan language.
 
 # Motivation
 [motivation]: #motivation
 
-The primary motivation for implementing quantile functions in Stan Math is so that users can call them in the `transformed parameters` block of a Stan program to express their prior beliefs about a parameter. The argument (in the mathematical sense) of a quantile function is a cumulative probability between 0 and 1 that would be declared in the `parameters` block and have an implicit standard uniform prior. Thus, if 𝜃 is defined in the `transformed parameters` block by applying the quantile function to this cumulative probability, then the distribution of 𝜃 under the prior is the probability distribution defined by that quantile function. When data is conditioned on, the posterior distribution of the cumulative probability becomes non-uniform but we still obtain MCMC draws from the posterior distribution of 𝜃.
+The primary motivation for implementing quantile functions in Stan Math is so that users can call them in the `transformed parameters` block of a Stan program to express their prior beliefs about a parameter. The argument (in the mathematical sense) of a quantile function is a cumulative probability between 0 and 1 that would be declared in the `parameters` block and have an implicit standard uniform prior. Thus, if 𝜃 is defined in the `transformed parameters` block by applying the quantile function to this cumulative probability, then the distribution of 𝜃 under the prior is the probability distribution defined by that quantile function. When data is conditioned on, the posterior distribution of the cumulative probability becomes non-uniform but we still obtain MCMC draws from the posterior distribution of 𝜃 that differs from the prior distribution.
 
-If we were to unnecessarily restrict ourselves to quantile functions for common probability distributions, this method of expressing prior beliefs about 𝜃 is no easier than declaring 𝜃 in the `parameters` block and using a prior Probability Density Function (PDF) to express beliefs about 𝜃 in the `model` block. However, if 𝜃 has a heavy-tailed distribution, then defining it in the `transformed parameters` block may yield more efficient MCMC because the distribution of the cumulative probability (when transformed to the unconstrained space) tends to have tails that are more reasonable. In addition, expressing prior beliefs via quantile functions is necessary if the log-likelihood function is reparameterized in terms of cumulative probabilities, which we intend to pursue for computational speed over the next three years under the same NSF grant.
+As a side note, Stan Math is already using internally this construction in many of its `_rng` functions, where
+drawing from a standard uniform and applying a quantile function to it is called "inversion sampling". So,
+this design doc is mostly just a plan to make quantile functions available to be called directly. However, it does make the Stan program look more similar to one that draws from the prior predictive distribution in the `transformed data` block for Simulation Based Calibration.
 
-However, there is no need to restrict ourselves to quantile functions for common probability distributions, and it is conceptually easier for the user to express prior beliefs about 𝜃 using very flexible probability distributions that are defined by explicit quantile functions but lack explicit CDFs and PDFs. Examples include the Generalized Lambda Distribution, the metalog(istic) distribution, the Chebyshev distribution of the first kind, and increasing cubic splines. In each of these cases, the user would specify a few pairs of cumulative probabilities and values of 𝜃, and then an increasing curve would be run through these user-supplied points. In other words, the quantile function would interpolate through the prior median, the prior quartiles, etc. Thus, from the user's perspective, all of the hyperparameters are _location_ parameters --- even though they collectively characterize the shape of the prior distribution for 𝜃 --- and location parameters are easier for user's to think about than other kinds of hyperparameters.
+If we were to unnecessarily restrict ourselves to quantile functions for common probability distributions, this method of expressing prior beliefs about 𝜃 is no easier than declaring 𝜃 in the `parameters` block and using a prior Probability Density Function (PDF) to express beliefs about 𝜃 in the `model` block. However, if 𝜃 has a heavy-tailed distribution, then defining it in the `transformed parameters` block may yield more efficient MCMC because the distribution of the cumulative probability (when transformed to the unconstrained space) tends to have tails that are more reasonable. In addition, expressing prior beliefs via quantile functions is necessary if the log-likelihood function is reparameterized in terms of cumulative probabilities, which we intend to pursue for computational speed over the next three years under the same NSF grant but that will require a separate design doc. 
 
-We can support this workflow for specifying prior beliefs about 𝜃 for any univariate continuous probability distribution, although the more flexible distributions include a lot of common probability distributions that have one or two hyperparameters as special cases. I anticipate that once Stan users are exposed to this workflow, many will prefer to use it over the traditional workflow of specifying prior beliefs about 𝜃 via a PDF.
+However, there is no need to restrict ourselves to quantile functions for common probability distributions, and it is conceptually easier for the user to express prior beliefs about 𝜃 using very flexible probability distributions that are defined by explicit quantile functions but lack explicit CDFs and PDFs. Examples include the Generalized Lambda Distribution, the metalog(istic) distribution, the no name distribution of the first kind, and distributions whose quantile function is a spline. In each of these cases, the user would specify a few pairs of cumulative probabilities and values of 𝜃, and then an increasing curve would be run through these user-supplied points. In other words, the quantile function would interpolate through the prior median, the prior quartiles, etc. Thus, from the user's perspective, all of the hyperparameters are _location_ parameters --- even though they collectively characterize the shape of the prior distribution for 𝜃 --- and location parameters are easier for users to think about than other kinds of hyperparameters (especially expectations).
+
+We can support this workflow for specifying prior beliefs about 𝜃 for any univariate continuous probability distribution, although the more flexible distributions include a lot of common probability distributions that have one or two hyperparameters as special cases. I anticipate that once Stan users become familiar with this workflow, many will prefer to use it over the traditional workflow of specifying prior beliefs about 𝜃 via a PDF.
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-For univariate continuous probability distributions, the quantile function is the inverse of the CDF, or equivalently, the CDF is the inverse of the quantile function. For example, in the following minimal Stan program
+In the following minimal Stan program
 ```
 data {
   real median;
   real<lower = 0> scale;
 }
 parameters {
-  real<lower = 0, upper = 1> p;
+  real<lower = 0, upper = 1> p; // implicitly standard uniform
 }
 transformed parameters {
   real theta = median + scale * tan(pi() * (p - 0.5));
-} // quantile function of the Cauchy distribution
+} // ^^^ quantile function of the Cauchy distribution
 ```
-the distribution of `p` is standard uniform (because there is no `model` block) and the distribution of 𝜃 is Cauchy because `theta` is defined by the quantile function of the Cauchy distribution. But it would be better for users if the quantile function for the Cauchy distribution were implemented in Stan Math and (eventually) exposed to the Stan language, so that this minimal Stan program could be equivalently rewritten as
+the distribution of `p` is standard uniform (because there is no `model` block) and the distribution of 𝜃 is Cauchy because `theta` is defined by the quantile function of the Cauchy distribution. But it would be better for users if the quantile function for the Cauchy distribution were implemented in Stan Math and eventually exposed to the Stan language, so that the even more minimal Stan program could be equivalently rewritten as
 ```
 data {
   real median;
   real<lower = 0> scale;
 }
 parameters {
-  real<lower = 0, upper = 1> p;
+  real<lower = 0, upper = 1> p; // implicitly standard uniform
 }
 transformed parameters {
   real theta = cauchy_qf(p, median, scale);
 } // theta = median + scale * tan(pi() * (p - 0.5))
 ```
-However, rarely do user's have prior beliefs about 𝜃 that necessitate the Cauchy distribution, i.e. 𝜃 is a ratio of centered normals. Rather, when users use the Cauchy distribution as a prior they do so because their beliefs about 𝜃 are heavy-tailed and symmetric. But there are many other probability distributions that are heavy tailed and symmetric that are not exactly Cauchy. In that situation, a user may find it preferable to use a more flexible distribution, such as the metalog(istic) distribution, whose quantile function interpolates through _K_ pairs of `quantiles` and `depths` (cumulative probabilities) that the user passes to the `data` block of their Stan program.
+However, rarely do users have prior beliefs about 𝜃 that necessitate the Cauchy distribution, i.e. 𝜃 is a ratio of standard normal variates. Rather, when users use the Cauchy distribution as a prior they do so because their prior beliefs about 𝜃 are vaguely heavy-tailed and symmetric. But there are many other probability distributions that are heavy tailed and symmetric that are not exactly Cauchy. 
+
+In that situation, a user may find it preferable to use a more flexible distribution, such as the metalog(istic) distribution, whose quantile function interpolates through _K_ pairs of `depths` (cumulative probabilities) and `quantiles` that the user passes to the `data` block of their Stan program. If _K_ = 3, then the metalog quantile function is `theta = a + b * logit(p) + c * (p - 0.5) * logit(p)`, where `a`, `b`, and `c` are three coefficients whose values are implied by the _K_ = 3 `depths` and `quantiles`. This is a valid quantile function --- i.e. it is strictly increasing over the entire [0,1] interval --- if and only if both b > 0 and |c| / b < 1.66711. Having `depths` and `quantiles` in increasing order is necessary but not sufficient for the quantile function to be valid. But _K_ need not be 3 and its value is specified at runtime in the following Stan program:
 ```
 data {
   int<lower = 1> K;
-  ordered[K] quantiles;
   ordered[K] depths;
+  ordered[K] quantiles;
 }
+transformed data {
+  vector[K] coefficients = metalog_coef(depths, quantiles);
+} // maximal validity checking ^^^
 parameters {
-  real<lower = 0, upper = 1> p;
+  real<lower = 0, upper = 1> p; // implicitly standard uniform
 }
 transformed parameters {
-  real theta = metalog_qf(p, quantiles, depths);
-}
+  real theta = metalog_qf(p, coefficients);
+} // minimal ^^^ validity checking
 ```
 The mindset of the Stan user could be:
 
-> Before seeing any new data, I believe there is an equal chance that 𝜃 is negative as positive. There is a 0.25 chance that 𝜃 < -1 and a 0.25 chance that 𝜃 > 1. Finally, there is a 0.1 chance that 𝜃 < -3 and a 0.1 chance that 𝜃 > 3. Thus, `quantiles = [-3, -1, 0, 1, 3]'` and `depths = [0.1, 0.25, 0.5, 0.75, 0.9]'`.
+> Before seeing any new data, I believe there is an equal chance that 𝜃 is negative as it is positive. There is a 0.25 chance that 𝜃 < -1 and a 0.25 chance that 𝜃 > 1. Finally, there is a 0.1 chance that 𝜃 < -3 and a 0.1 chance that 𝜃 > 3. So, _K_ = 5, `depths = [0.1, 0.25, 0.5, 0.75, 0.9]'`, and `quantiles = [-3, -1, 0, 1, 3]'`.
 
-Then, the `metalog_qf` interpolates through these _K_ = 5 points that the user provides. In this case, the user's prior beliefs about 𝜃 happen to be very close to a standard Cauchy distribution, but if the prior `quantiles` and `depths` were different, then the metalog distribution would still apply. Thus, the user does not need to know about the Cauchy distribution or that you could obtain a distribution with slightly lighter tails by using the Student t distribution with a small number of degrees of freedom; they just need to specify the prior values of the quantile function at 0.1, 0.9 or other tail `depths`.
+The `metalog_qf` interpolates through these _K_ points that the user provides. In this example, the user's prior beliefs about 𝜃 happen to be very close to a standard Cauchy distribution, but if the prior `depths` and `quantiles` were different, then the metalog distribution would still apply. Thus, the user does not need to know about the Cauchy distribution or that you could obtain a distribution with slightly lighter tails by using the Student t distribution with a small degrees of freedom; they just need to specify the prior values of the quantile function at 0.1, 0.9 or other tail `depths`. In other words, this workflow would drastically deemphasize the _name_ of the probability distribution and focus on its main _properties_ like the median, inter-quartile range, and left/right tail heaviness.
 
-An exception is thrown by any quantile function if a purported cumulative probability is negative or greater than 1, although 0 and 1 are valid edge cases. Similarly, for quantile functions like `metalog_qf` that input `quantiles` and `depths` an exception is thrown if these vectors are not strictly increasing. Finally, for some quantile functions like `metalog_qf`, it is difficult to tell whether it is strictly increasing over the entire [0,1] interval; thus, an exception is thrown if the derivative of the quantile function (called the quantile density function) evaluated at `p` is negative. In the usual case where `quantiles` and `depths` are declared in the `data` block, it could be possible to call some sort of validity function in the `transformed data` block that would return 1 if the quantile function is strictly increasing over the entire [0,1] interval (and 0 otherwise) by checking whether the quantile density function lacks a root on [0,1].
+The `metalog_coef` function that is called in the `transformed data` block above would output the `coefficients` that are needed to define the metalog quantile function as a weighted sum of basis functions, i.e. a, b, and c if _K_ = 3. These `coefficients` are not particularly interpretable but are implied by the readily-interpretable `depths` and `quantiles`; in other words, they are the `coefficients` that imply `metalog_qf` interpolates through those _K_ `depths` and `quantiles` and are thus a solution to a linear system of _K_ equations. When _K_ = 3, the equations to be solved using linear algebra are
+
+<style>
+table{
+    border-collapse: collapse;
+    border-spacing: 0;
+    border:2px solid #ff0000;
+}
+
+th{
+    border:2px solid #000000;
+}
+
+td{
+    border:1px solid #000000;
+}
+</style>
+  |   |              |   |                            |       |       |     |    
+- | - | ------------ | - | -------------------------- | ----- | ----- |-----| ---
+1 |   | `logit(d_1)` |   | `(d_1 - 0.5) * logit(d_1)` |       |   a   |     | `q_1`
+1 |   | `logit(d_2)` |   | `(d_2 - 0.5) * logit(d_2)` |       |   b   |  =  | `q_2`
+1 |   | `logit(d_3)` |   | `(d_3 - 0.5) * logit(d_3)` |       |   c   |     | `q_3`
+
+
+The `metalog_coef` function would check that both `depths` and `quantiles` are strictly increasing and that the quantile density function is strictly increasing throughout the [0,1] interval, which is fairly expensive if _K_ > 3 but only needs to be checked once if both `depths` and `quantiles` are constants. Then, the  `metalog_qf` function that is called in the `transformed parameters` block only needs to check that `p` is between 0 and 1.
+
+An exception is thrown by any quantile function if a purported cumulative probability is negative or greater than 1, although 0 and 1 are valid edge cases. This behavior is unlike that of a CDF where it is arguably coherent, for example, to query what is the probability that a Beta random variate is less than or equal to 42? Helper functions like `metalog_coef` function throw an exception if the implied quantile density function is negative at any point in the [0,1] interval by numerically searching this interval for a root (if there is no better way).
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-Unlike the `_cdf` and `_lpdf` functions in Stan Math that return scalars even if their arguments are not scalars, the quantile functions should return a scalar only if all of the arguments are scalars and otherwise should return something whose size is equivalent to the size of the argument with the largest size. In C++, `cauchy_qf` could be implemented in `prim/prob` roughly like
+From a developer's perspective, there are four categories of quantile functions:
+
+1. Explicit functions with a predetermined number of hyperparameters. Examples include the Cauchy distribution, the exponential distribution, and maybe ten other distributions. All of the arguments could easily be templated. For most such distributions, we already have the CDFs and PDFs, but an exception is the Generalized Lambda Distribution, which does not have an explicit CDF or PDF.
+2. Explicit functions with a number of hyperparameters that is determined at runtime. Examples include the metalog distribution, the no name distribution of the first kind, and a few other "quantile parameterized distributions". All of the arguments could be templated, but the hyperparameters are vectors of size _K_. None of these distributions currently exist in Stan Math because they do not have explicit CDFs or PDFs.
+3. Implicit functions where all the `var` hyperparameters are outside the kernel. Examples include the normal distribution and the Student t distribution with a fixed degrees of freedom. In this case, the partial derivatives are fairly easy to compute.
+4. Implicit functions where some of the `var` hyperparameters are inside the kernel. Examples include the gamma distribution, beta distribution, and many others that are not in the location-scale family. In this case, the partial derivative with respect to a hyperparameter is not an explicit function.
+
+Unlike the `_cdf` and `_lpdf` functions in Stan Math that return scalars even if their arguments are not scalars, the quantile (density) functions should return something whose size is the same as that of the first argument. 
+
+## Category (1)
+
+In C++, `cauchy_qf` could be implemented in `prim/prob` basically like
 ```
 template <typename T_p, typename T_loc, typename T_scale>
 return_type_t<T_p, T_loc, T_scale> cauchy_qf(const T_p& p, const T_loc& mu,
                                              const T_scale& sigma) {
-  static const char* function = "cauchy_qf";                                             
-  check_consistent_sizes(function, "Depth", p, "Location parameter",
-                         mu, "Scale Parameter", sigma);
-  check_probability(function, "Depth", p);
-  check_finite(function, "Location parameter", mu);
-  check_positive_finite(function, "Scale parameter", sigma);
-  using T_partials_return = partials_return_t<T_p, T_loc, T_scale>;  
-  T_partials_return quantiles;
-  for (int n = 0; n < size(quantiles); n++) { // if mu and sigma are scalars
-    quantiles[n] = mu + sigma * tan(stan::math::pi() * (p[n] - 0.5));
-  }
+  // argument checking
+  return mu + sigma * tan(pi() * (p - 0.5));
+}
+```
+In the actual implementation, we would want to handle the partial derivatives analytically rather than using autodiff, at least for categories (1) and (2). In this case, if `p` is 1 or 0, then the corresponding returned value is positive infinity or negative infinity respectively, which are the correct limiting values.
+
+The partial derivative of the quantile function with respect to the first argument is called the quantile density function and could be implemented in the Cauchy case like
+```
+template <typename T_p, typename T_scale>
+return_type_t<T_p, T_loc, T_scale> cauchy_qdf(const T_p& p,
+                                              const T_scale& sigma) {
+  // argument checking
+  return pi() * sigma / square(sin(pi() * p));
+}
+```
+Here there is a minor issue of whether the signature of the `cauchy_qdf` should also take `mu` as an argument, even though the quantile density function does not depend on `mu`.
+
+## Category (2)
+
+For distributions like the metalog, there would be an exposed helper function with a `_coef` postfix that inputs vectors (or real arrays) of `depths` and `quantiles` and outputs the implied vector of `coefficients` after thoroughly checking for validity (and throwing an exception otherwise)
+```
+template <typename T_d, typename T_q>
+return_type_t<T_d, T_q> metalog_coef(const T_q& depths,
+                                     const T_d& quantiles) {
+  // check that both depths and quantiles are ordered
+  // check that all elements of depths are between 0 and 1 inclusive
+  // solve linear system for coefficients derived by Tom Keelin
+  // check that metalog_qdf with those coefficients has no root on [0,1]
+  return coefficients;
+}
+```
+Then, the quantile and quantile density functions can be defined with `coefficients` as the hyperparameter vector:
+```
+template <typename T_p, typename T_c>
+return_type_t<T_p, T_c> metalog_qf(const T_p& p,
+                                   const T_c& coefficients) {
+  // check that p is between 0 and 1 inclusive
+  // calculate quantiles via dot_product
   return quantiles;
 }
-```
-In the actual implementation, we would want to handle the partial derivatives analytically rather than using autodiff, at least in cases like `cauchy_qf` where the quantile function is explicit. In this case, if `p[n]` is 1 or 0, then 𝜃 is infinite, which is the correct limiting value.
 
-The `normal_qf` would be almost the same, even though it relies on `inv_Phi` which is not an explicit function of the depth:
-```
-template <typename T_p, typename T_loc, typename T_scale>
-return_type_t<T_p, T_loc, T_scale> normal_qf(const T_p& p, const T_loc& mu,
-                                             const T_scale& sigma) {
-  static const char* function = "normal_qf";                                             
-  check_consistent_sizes(function, "Depth", p, "Location parameter",
-                         mu, "Scale Parameter", sigma);
-  check_probability(function, "Depth", p);
-  check_finite(function, "Location parameter", mu);
-  check_positive_finite(function, "Scale parameter", sigma);
-  using T_partials_return = partials_return_t<T_p, T_loc, T_scale>;  
-  T_partials_return quantiles;
-  for (int n = 0; n < size(quantiles); n++) { // if mu and sigma are scalars
-    quantiles[n] = mu + sigma * inv_Phi(p[n]);
-  }
-  return quantiles;
+template <typename T_p, typename T_c>
+return_type_t<T_p, T_c> metalog_qdf(const T_p& p,
+                                    const T_c& coefficients) {
+  // check that p is between 0 and 1 inclusive
+  // calculate slopes via dot_product
+  return slopes;
 }
 ```
-In this case, if `p[n]` is _near_ 1 or 0, then `inv_Phi(p[n])` will overflow to infinity, which is numerically acceptable even though analytically, it should only be infinite if `p[n]` is _exactly_ 1 or 0 respectively.
+If the `_qdf` can be written as a polynomial in `p`, then it is possible for the `_coef` function to quickly check whether the `_qdf` has any root on the [0,1] interval using Budan's [theorem](https://en.wikipedia.org/wiki/Budan%27s_theorem). If the `_qdf` is not a polynomial, then the `_coef` function would have to call one of the root-finding [functions](https://www.boost.org/doc/libs/1_76_0/libs/math/doc/html/root_finding.html) in Boost to verify that the `_qdf` has no root on the [0,1] interval.
 
-In the case of the normal distribution, it is rather easy to differentiate with respect to μ and / or σ because they do not enter the implicit function `inv_Phi`. However, in the case of many distributions like the gamma distribution, there is no explicit quantile function but the shape hyperparameters enter the implicit function. Thus, we can evaluate the quantile function of the gamma distribution rather easily via Boost:
-```
-template <typename T_p, typename T_shape, typename T_inv_scale>
-return_type_t<T_p, T_shape, T_inv_scale> gamma_qf(const T_p& p,
-                                                  const T_shape& alpha,
-                                                  const T_inv_scale& beta) {
-  // argument checking
-  auto dist = boost::gamma_distribution<>(value_of(alpha), 1 / value_of(beta));
-  return quantile(dist, value_of(p));
-}
-```
-but differentiating the quantile function with respect to the shape hyperparameters would be as difficult as differentiating the CDF with respect to the shape hyperparameters. So, I might start by requiring the hyperparameters to be fixed data for distributions that lack explicit quantile functions, and then allow the hyperparameters to be unknown `var` later.
-
-Boost also has "complimentary" quantile functions that have greater numerical accuracy when the depth is close to 1. Hopefully, we can just utilize these inside Stan Math rather than exposing them to the Stan language. It would look something like
-```
-template <typename T_p, typename T_shape, typename T_inv_scale>
-return_type_t<T_p, T_shape, T_inv_scale> gamma_qf(const T_p& p,
-                                                  const T_shape& alpha,
-                                                  const T_inv_scale& beta) {
-  // argument checking
-  auto dist = boost::gamma_distribution<>(value_of(alpha), 1 / value_of(beta));
-  if (p > 0.999) return quantile(complement(dist, value_of(p)));
-  else return quantile(dist, value_of(p));
-}
-```
-
-For any probability distribution with a conceptually _fixed_ number of hyperparameters, implementing the quantile function is basically like implementing the CDF (except without the reduction to a scalar return value). However, there are useful probability distributions, such as the metalog distribution, where the quantile function can take an _arbitrary_ number of pairs of quantiles and depths whose number is not known until runtime. In that case, some of the trailing arguments to the quantile function will be vectors or real arrays, or perhaps arrays of vectors or arrays of real arrays. The simplest signature would be
-```
-template <typename T_p>
-T_p metalog_qf(const T_p& p, vector_d& quantiles, vector_d& depths);
-```
-In order to interpolate through the _K_ points given by `quantiles` and `depths`, you have to set up and then solve a system of _K_ linear equations, which is not too difficult. However, in the usual case where both `quantiles` and `depths` are fixed data, it is computationally wasteful to solve a constant system of _K_ linear equations at each leapfrog step. It would be more efficient for the user to solve for the _K_ coefficients once in the `transformed data` block and pass those to `metalog_qf` in the `transformed parameters` block when it is applied to a `var`. If we were willing to distinguish user-facing functions by number of arguments, we could have a variant of the metalog quantile function that takes the coefficients:
-```
-template <typename T_p>
-T_p metalog_qf(const T_p& p, vector_d& coefficients);
-```
-that were produced by a helper function
-```
-vector_d metalog_coef(vector_d& quantiles, vector_d& depths);
-```
-that checked the `quantiles` and `depths` for validity, solved the system of _K_ equations, and returned the resulting coefficients. 
-
-This `metalog_coef` function could also check that the quantile function that interpolates through these _K_ points is, in fact, strictly increasing over the entire [0,1] interval. If `quantiles` and / or `depths` were not fixed data, then it would be very expensive to check whether the quantile function that interpolates through these _K_ points is strictly increasing over the entire [0,1] interval, although it is cheap to check whether it is increasing at a _particular_ depth (and we would have to evaluate the derivative anyway if the depth is a `var`). Thus, if `quantiles` and / or `depths` is a `vector_v`, I propose that we check that the quantile function is increasing at the given depth(s) rather than at all possible dephs, which is presumably adequate for MCMC and optimization but could result in an invalid probability distribution if it were used in some other context.
-
-Boost has a well-known monotonic [interpolation](https://www.boost.org/doc/libs/1_76_0/libs/math/doc/html/math_toolkit/pchip.html) function called `pchip` that could be used as a flexible quantile function. It consists of piecewise cubic polynomials that are differentiable at the given points. However, the `pchip` constructor returns a callable, and like in the metalog case, it would be computationally wasteful to reconstruct the spline at every leapfrog step when the points that it is interpolating through are fixed data. But the Stan language currently lacks something useful like
+Boost has a well-known monotonic [interpolation](https://www.boost.org/doc/libs/1_76_0/libs/math/doc/html/math_toolkit/pchip.html) function called `pchip` that could be used as a flexible quantile function. It consists of piecewise cubic polynomials that are differentiable at the given points. However, the `pchip` constructor returns a callable, and it would be computationally wasteful to reconstruct the spline at every leapfrog step when the points that it is interpolating through are fixed data. But the Stan language currently lacks something useful like
 ```
 data {
   int<lower = 1> K;
-  ordered[K] quantiles;
   ordered[K] depths;
+  ordered[K] quantiles;
 }
 transformed data { // not valid syntax
   callable my_qf = pchip(depths, quantiles);
 }
 parameters {
-  real<lower = 0, upper = 1> p;
+  real<lower = 0, upper = 1> p; // implicitly standard uniform
 }
 transformed parameters {
   real theta = my_qf(p);
@@ -178,35 +194,108 @@ transformed parameters {
 ```
 Maybe we could add something like that `transformed data` block when we do lambda functions.
 
+## Category (3)
+
+The `normal_qf` would be almost the same as `cauchy_qf`, even though it relies on `inv_Phi` which is not an explicit function of the cumulative probability:
+```
+template <typename T_p, typename T_loc, typename T_scale>
+return_type_t<T_p, T_loc, T_scale> normal_qf(const T_p& p, const T_loc& mu,
+                                             const T_scale& sigma) {
+  // argument checking
+  return mu + sigma * inv_Phi(p);
+}
+```
+In this case, if `p` is too _near_ 1 or 0, then `inv_Phi(p)` will overflow to positive or negative infinity respectively, which is numerically acceptable even though analytically, it should only be infinite if `p` is _exactly_ 1 or 0 respectively. In the case of the normal distribution, or another distribution in category (3), it is rather easy to differentiate with respect to the hyperparameters because they do not enter the kernel of the implicit function, in this case `inv_Phi`.
+
+The `inv_Phi` function currently in Stan Math  [differentiates](https://github.com/stan-dev/math/blob/develop/stan/math/rev/fun/inv_Phi.hpp#L23) with respect to its argument by using the fact that the reciprocal of the quantile density function (called the density quantile function) is the the same expression as the PDF, just in terms of `p`. For the general normal distribution, the quantile density function does not depend on `mu`, so it could be implemented like
+```
+template <typename T_p, typename T_scale>
+return_type_t<T_p, T_loc, T_scale> normal_qdf(const T_p& p,
+                                              const T_scale& sigma) {
+  // argument checking
+  return exp(-normal_lpdf(sigma * inv_Phi(p), 0, sigma));
+  
+}
+```
+
+## Category (4)
+
+In the case of many distributions like the gamma distribution, there is no explicit quantile function but the hyperparameters enter the kernel. We can evaluate the quantile function of the gamma distribution rather easily via Boost, which also has "complimentary" quantile functions that have greater numerical accuracy when the depth is close to 1. It would look something like
+```
+template <typename T_p, typename T_shape, typename T_inv_scale>
+return_type_t<T_p, T_shape, T_inv_scale> gamma_qf(const T_p& p,
+                                                  const T_shape& alpha,
+                                                  const T_inv_scale& beta) {
+  // argument checking
+  auto dist = boost::gamma_distribution<>(value_of(alpha), 1 / value_of(beta));
+  if (p > 0.5) return quantile(complement(dist, 1 - value_of(p)));
+  else return quantile(dist, value_of(p));
+}
+
+template <typename T_p, typename T_shape, typename T_inv_scale>
+return_type_t<T_p, T_shape, T_inv_scale> gamma_qdf(const T_p& p,
+                                                   const T_shape& alpha,
+                                                   const T_inv_scale& beta) {
+  // argument checking
+  return exp(-gamma_lpdf(gamma_qf(p, alpha, beta), alpha, beta));
+```
+However, the derivative of the quantile function with respect to the shape and inverse scale hyperparameters is not an explicit function. We do have the machinery to differentiate an implicit function in `algebraic_solver` that could be essentially reused in this case. Autodiff could also work if Stan Math would ever make `var` compatible with Boost's real number [concept](https://www.boost.org/doc/libs/1_77_0/libs/math/doc/html/math_toolkit/real_concepts.html).
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Beyond the usual fact that implementing any new function requires documentation, more computer time to unit test, maintainence, etc., this will create a lot of cognitive dissonance for users, even though it is intended to make things easier for them. I think it will be a lot like when we introduced the LKJ distribution, and most users had no idea what to input for the shape parameter because they had not previously thought about a probability distribution over the space of correlation matrices. In this case, almost all users have not previously thought about using a prior _transformation_ of a cumulative probability rather than a prior _PDF_ on the parameter of interest, even though these are the flip sides of the same coin and you could express the same prior beliefs either way. So, there are going to be a lot of misguided questions like "How do I interpret the posterior distribution of `p`?". Also, even if we have quantile functions, there are going to be a lot of users that only want to utilize probability distributions like the normal that they have heard of before, even though they have no idea what to put for the prior standard deviation and even though probability distributions that they have not heard of before are easier because you only have to specify prior quantiles and depths. Also, users are going to run into errors when the quantile function they try to define is not actually increasing over the entire [0,1] interval and they will not know what to do.
+Beyond the usual fact that implementing any new function requires documentation, more computer time to unit test, maintainence, etc., this will create a lot of cognitive dissonance for users, even though it is intended to make things easier for them. I think it will be a lot like when we introduced the LKJ distribution, and most users had no idea what to input for the shape parameter because they had not previously thought about a probability distribution over the space of correlation matrices. In this case, almost all users have not previously thought about using a prior _transformation_ of a cumulative probability rather than a prior _PDF_ on the parameter of interest, even though these are the flip sides of the same coin and you could express the same prior beliefs either way, although that is more difficult in practice if either is not an explicit function. 
+
+Some would say that CDFs and PDFs are the only appropriate way to think about continuous probability distributions because the measure theory that lets you go from discrete to continuous random variables unifies the PMF with the PDF. I think this is, at best, irrelevant to most Stan users because they have not taken any measure theory classes and, at worst, creates unnecessary difficulties when they write Stan programs.
+
+But there are going to be a lot of misguided questions like "How do I interpret the posterior distribution of `p`?". Also, once we expose quantile functions, there are going to be a lot of users that only want to utilize probability distributions like the normal that they have heard of before, even though they have no idea what to put for the prior standard deviation and even though probability distributions that they have not heard of before are easier because you only have to specify prior quantiles and depths. Then, users are going to run into errors when the quantile function they try to define is not actually increasing over the entire [0,1] interval and they will not know what to do.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-A quantile function must be an increasing function from the [0,1] interval to a parameter space, Θ. So, it is not as if there is some other concept of a quantile function to compete with this definition, in the same way that there is essentially only one way to define the concept of a CDF. Thus, the only flexibility in the design is in the details, such as how much time are we willing to spend checking that a metlog quantile function is increasing?
+A quantile function must be an increasing function from the [0,1] interval to a parameter space, Θ. So, it is not as if there is some other concept of a quantile function with an alternative definition, in the same way that there is essentially only one way to define the concept of a CDF. Thus, the only genuine flexibility in the design is in some of the details.
 
-I suppose we do not have to merge the ultimate quantile function pull request(s), but I am obligated to make the branches under a NSF grant. This NSF grant also funds me and Philip to interpolate the log-likelihood as a function of `p`, as opposed to a function of 𝜃. We can potentially interpolate the log-likelihood as a function of `p` much faster than we can evaluate the log-likelihood as a function of 𝜃, but in order to do that, users would need to reparameterize their Stan programs so that `p` is declared in the `parameters` block, in which case they would need to use quantile functions in the `transformed parameters` block to express their prior beliefs about 𝜃. Thus, if we do not implement a lot of quantile functions for users to express their prior beliefs with, then they cannot capture the gains in speed from interpolating the log-likelihood as a function of `p`.
+The scope for alternatives is mostly for distributions in category (2) where the size of the hyperparameter vectors is not known until runtime and there is no cheap way to check whether the implied quantile function is increasing throughout the entire [0,1] interval. This is somewhat similar to `multi_normal_lpdf` having no cheap way to check whether the covariance matrix is positive definite. If the covariance matrix is fixed, users are better served calculating its Cholesky factor once in the `transformed data` block and then calling `multi_normal_cholesky_lpdf` in the model block.
+
+In the workflow proposed above, it would be the user's responsibility to call `vector[K] coefficients = metalog_coef(depths, quantiles)` before calling `metalog_qf(p, coefficients)`. The advantage of this workflow is that `metalog_qf` only needs to check that `p` is between 0 and 1. The disadvantage is that if users somehow make up their own coefficients without first calling `metalog_coef`, then `metalog_qf(p, coefficients)` might not be an increasing function throughout the entire [0,1] interval and thus is not a valid quantile function.
+
+One alternative would be for `metalog_qf` to check that it is increasing every time that it is called, in which case we might as well make a three argument version `metalog_qf(p, depths, quantiles)` and avoid having the two-argument version `metalog_qf(p, coefficients)`. That would be more similar to what `multi_normal_lpdf` does, even if the covariance matrix is fixed. However, `multi_normal_lpdf` is rarely called with a fixed covariance matrix, whereas `metalog_qf` would typically be called with fixed `depths` and `quantiles`, so the redundant checking would be more painful.
+
+Another alternative would be for `metalog_qf(p, coefficients)` to check that `metalog_qdf(p, coefficients)` is positive. However, it is conceptually insufficient to establish that the quantile density function is positive at a particular `p`; it needs to be positive for every value in the [0,1] interval. Thus, although this check is cheap, it would not be dispositive on its own.
+
+We could use the Eigen plugin mechanism to have an addition boolean that is `true` if and only if it has been produced by a `_coef` function that thoroughly checks for validity. Since users would not be able to set it to `true` within the Stan language, they could not call the `metalog_qf` without having called `metalog_coef`. However, that seems heavy-handed, and there could be valid ways to construct the vector of coefficients in a higher-level interface and passing them to the `data` block of their Stan programs.
+
+I suppose we do not have to merge the quantile function pull request(s) at all, but I am obligated to make the branches under a NSF grant. This NSF grant also funds me and Philip to interpolate the log-likelihood as a function of `p`, as opposed to a function of 𝜃. We can potentially interpolate the log-likelihood as a function of `p` much faster than we can evaluate the log-likelihood as a function of 𝜃, but in order to do that, users would need to reparameterize their Stan programs so that `p` is declared in the `parameters` block, in which case they would need to use quantile functions in the `transformed parameters` block to express their prior beliefs about 𝜃. Thus, if we do not implement a lot of quantile functions for users to express their prior beliefs with, then they cannot capture the gains in speed from interpolating the log-likelihood as a function of `p`.
 
 # Prior art
 [prior-art]: #prior-art
 
-Quantile functions have been implemented (but presumably not used much) in other languages for decades, such as:
+There is no prior art needed in the narrow intellectual property sense because quantile functions are just math and math cannot be patented. However, quantile functions have been implemented (but presumably not used for much besides pseudo-random number generation) in other languages for decades, such as:
 
 * R: [qcauchy](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Cauchy.html) and similarly for other common distributions
 * Boost: [cauchy_distribution](https://www.boost.org/doc/libs/1_76_0/libs/math/doc/html/math_toolkit/dist_ref/dists/cauchy_dist.html) and similarly for other common distributions
 * Mathematica: The quantile function is a standard (but not always explicit) function in the [Ultimate Probability Distribution Explorer](https://blog.wolfram.com/2013/02/01/the-ultimate-univariate-probability-distribution-explorer/)
 
-There is one [textbook](https://www.google.com/books/edition/Statistical_Modelling_with_Quantile_Func/7c1LimP_e-AC?hl=en) on quantile functions that spends a good bit of time pointing out that quantile functions are underutilized even for data (priors or anything to do with Bayesian analysis are not mentioned). Tom Keelin has a number of [papers](http://www.metalogdistributions.com/publications.html) and some Excel workbooks on the metalog distribution, which is defined by its quantile function that are essentially Bayesian but do not involve MCMC. I did a [presentation](https://youtu.be/_wfZSvasLFk) at StanCon and a couple at the Flatiron Institute on these ideas.
+There is one [textbook](https://www.google.com/books/edition/Statistical_Modelling_with_Quantile_Func/7c1LimP_e-AC?hl=en) on quantile functions that spends a good bit of time pointing out that quantile functions are underutilized even for data (priors or anything to do with Bayesian analysis are not mentioned). Tom Keelin has a number of [papers](http://www.metalogdistributions.com/publications.html) and some Excel workbooks on the metalog distribution, which is essentially Bayesian but does not involve MCMC. I did a [presentation](https://youtu.be/_wfZSvasLFk) at StanCon and a couple at the Flatiron Institute on these ideas.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- Discrete distributions: Quantile functions exist for them, but they are not very useful because they are step functions. For completeness, we might implement them eventually but they are irrelevant to the NSF grant and the proposed workflow.
-- Multivariate distributions: Quantile functions are harder to define for multivariate continuous distributions, and you never get any explicit functions. Thus, I doubt we will ever do anything on that front.
-- Density quantile functions: These are the reciprocals of the quantile density functions (which are the first derivative of a quantile functions), which can be used for log-likelihoods. There is a Ph.D student at Lund who is working on this using Stan for his dissertation, but we will have to see who or what should implement that for Stan Math.
-- Checking that the quantile function is increasing: In many cases, the quantile function is increasing by construction. But for some distributions like the metalog, the quantile function is only increasing over the entire [0,1] interval only for some pairs of quantiles and depths. If those quantiles and / or depths are not fixed data, then verifying whether it is increasing for all points in [0,1] is much more expensive than verifying so for a given point in [0,1]. 
-- Can we have a three-argument version `metalog_qf(p, quantiles, depths)` and a two-argument version `metalog_qf(p, coefficients)` where the coefficients are produced in the `transformed data` block by `metalog_coef(quantiles, depths)`?
-- What to do about derivatives of implicit quantile functions with respect to hyperparameters? We have the implicit function stuff worked out in `algebraic_solver`, but I do not know how accurate the partial derivatives are going to be for probability distributions like the gamma.
+There are a lot of unresolved questions about the other part of the NSF grant, which involves evaluating the log-likelihood in terms of `p`, rather than in terms of `theta`. However, quantile functions and there use as prior transformations can stand on its own and can be implemented before the rest of the NSF grant.
+
+I am not going to do
+
+  - Quantile functions for discrete distributions because they are not that useful in Stan and are not useful at all for the intended workflow.
+  - Empirical quantile functions that for example, could be used to determine the median of a set of data points because they are not relevant to the intended workflow.
+  - Any of the `_cdf`, `_lpdf` etc. functions for distributions that have explicit quantile functions but not explicit CDFs because they are not that useful for the intended workflow.
+  - Quantile functions for multivariate distributions because they are harder to define and you never get to use any explicit functions.
+  - Density quantile functions, which are the reciprocals of the quantile density functions (which are the first derivative of a quantile functions) and can be used for indirect log-likelihoods. There is a Ph.D student at Lund who is working on this using Stan for his dissertation who might be interested in implementing this approach for the metalog density quantile function.
+
+The main question to resolve in the design is whether to have a `metalog_coef` function that would check whether `metalog_qf` is increasing over the entire [0,1] interval by checking whether `metalog_qdf` is positive over the entire [0,1] interval or to implement one of the two alternatives described above.
+
+Two minor questions to resolve in the design are
+
+  - Should quantile density functions for probability distributions in the location-scale family have signatures that involve the location parameter even though the quantile density function does not depend on it?
+  - Should we expose "complementary" versions of the quantile (density) functions, like `_cqf` and `_cqdf`? R does not have separate functions put takes a `lower.tail` argument that defaults to `TRUE` but can be specified as `FALSE` to obtain greater numerical precision when the cumulative probability is close to 1. I would say no for now because when the quantile function is explicit, you can usually enhance the numerical precision internally.
+
+There are some questions as to how many pull requests to do, in what order, and which quantile functions should go into which pull request, but those questions can be resolved later.
