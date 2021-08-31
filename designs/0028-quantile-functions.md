@@ -79,27 +79,7 @@ The `metalog_qf` interpolates through these _K_ points that the user provides. I
 
 The `metalog_coef` function that is called in the `transformed data` block above would output the `coefficients` that are needed to define the metalog quantile function as a weighted sum of basis functions, i.e. a, b, and c if _K_ = 3. These `coefficients` are not particularly interpretable but are implied by the readily-interpretable `depths` and `quantiles`; in other words, they are the `coefficients` that imply `metalog_qf` interpolates through those _K_ `depths` and `quantiles` and are thus a solution to a linear system of _K_ equations. When _K_ = 3, the equations to be solved using linear algebra are
 
-<style>
-table{
-    border-collapse: collapse;
-    border-spacing: 0;
-    border:2px solid #ff0000;
-}
-
-th{
-    border:2px solid #000000;
-}
-
-td{
-    border:1px solid #000000;
-}
-</style>
-  |   |              |   |                            |       |       |     |    
-- | - | ------------ | - | -------------------------- | ----- | ----- |-----| ---
-1 |   | `logit(d_1)` |   | `(d_1 - 0.5) * logit(d_1)` |       |   a   |     | `q_1`
-1 |   | `logit(d_2)` |   | `(d_2 - 0.5) * logit(d_2)` |       |   b   |  =  | `q_2`
-1 |   | `logit(d_3)` |   | `(d_3 - 0.5) * logit(d_3)` |       |   c   |     | `q_3`
-
+![system of equations][K3]
 
 The `metalog_coef` function would check that both `depths` and `quantiles` are strictly increasing and that the quantile density function is strictly increasing throughout the [0,1] interval, which is fairly expensive if _K_ > 3 but only needs to be checked once if both `depths` and `quantiles` are constants. Then, the  `metalog_qf` function that is called in the `transformed parameters` block only needs to check that `p` is between 0 and 1.
 
@@ -299,3 +279,5 @@ Two minor questions to resolve in the design are
   - Should we expose "complementary" versions of the quantile (density) functions, like `_cqf` and `_cqdf`? R does not have separate functions put takes a `lower.tail` argument that defaults to `TRUE` but can be specified as `FALSE` to obtain greater numerical precision when the cumulative probability is close to 1. I would say no for now because when the quantile function is explicit, you can usually enhance the numerical precision internally.
 
 There are some questions as to how many pull requests to do, in what order, and which quantile functions should go into which pull request, but those questions can be resolved later.
+
+[K3]: 0028-quantile-functions.png
