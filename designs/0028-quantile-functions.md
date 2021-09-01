@@ -121,6 +121,61 @@ return_type_t<T_p, T_loc, T_scale> cauchy_qdf(const T_p& p,
 ```
 Here there is a minor issue of whether the signature of the `cauchy_qdf` should also take `mu` as an argument, even though the quantile density function does not depend on `mu`.
 
+The Generalized Lambda Distribution (GLD) is a flexible probability distribution that can either be bounded or bounded on one or both sides depending on the values of its four hyperparameters. The GLD is not in Stan Math currently but is defined by its explicit quantile function since its CDF and PDF are not explicit functions. There are actually several parameterizations of the GLD quantile function that are not entirely equivalent, but the preferable parameterization looks like this in Stan code (when the median is zero and the interquartile range is one)
+```
+     Standard Generalized Lambda Distribution quantile function
+  
+     See equation 11 of
+     https://mpra.ub.uni-muenchen.de/37814/1/MPRA_paper_37814.pdf
+  
+     @param p real cumulative probability
+     @param chi real skewness parameter between -1 and 1
+     @param xi real steepness parameter between  0 and 1
+     @return real number that can be scaled and shifted to ~GLD
+   */
+  real std_gld_qf(real p, real chi, real xi) {
+    real alpha = 0.5 * (0.5 - xi) * inv_sqrt(xi * (1 - xi));
+    real beta  = 0.5 * chi * inv_sqrt(1 - square(chi));
+    if (chi < -1 || chi > 1) reject("chi must be between -1 and 1");
+    if (xi < 0 || xi > 1) reject("xi must be between 0 and 1");
+    if (p > 0 && p < 1) {
+      if (chi != 0 || xi != 0.5) {
+        if (fabs(alpha) != beta) {
+          real s = alpha + beta;
+          real d = alpha - beta;
+          if (alpha == negative_infinity()) return 0;
+          return (p ^ s - 1) / s - ( (1 - p) ^ d - 1 ) / d;
+        } else if (xi == 0.5 * (1 + chi)) {
+          real d = 2 * alpha;
+          return log(p) - ( (1 - p) ^ d - 1 ) / d;
+        } else {// xi == 0.5 * (1 - chi)
+          real s = 2 * alpha;
+          return (p ^ s - 1) / s - log1m(p);
+        }
+      } else return log(p) - log1m(p); // chi == 0 and xi == 0.5
+    } else if (p == 0) { // equation 13
+      return xi < 0.5 * (1 + chi) ? -inv(alpha + beta) : negative_infinity();
+    } else if (p == 1) { // equation 14
+      return xi < 0.5 * (1 - chi) ?  inv(alpha - beta) : positive_infinity();
+    } else reject("p must be between zero and one");
+    return not_a_number(); // never reaches
+  }
+```
+The quantile function of the general GLD would be like
+```
+real gld_qf(p, real median, real iqr, real chi, real xi) {
+  return median + iqr * std_gld_qf(p, chi, xi);
+}
+```
+In this case, the GLD is guaranteed to be strictly increasing if the stated inequality conditions on `chi` and `xi` are satisfied. However, if the user supplies a prior median, prior lower / upper quartiles, and one other pair of a depth and a quantile, it is not guaranteed that there is any GLD quantile function that runs exactly through those four points. We can provide a helper function that takes 
+
+  * Inputs a prior median, prior lower / upper quartiles, and one other pair of a depth and a quantile 
+  * Outputs the values of `chi` and `xi` that are consistent with those four points
+  * Throws an exception if there are no such values of `chi` and `xi`
+  
+The main difficulty with that is that the equations are very nonlinear and difficult to solve numerically. The `algebraic_solver` in Stan Math currently sometimes fails to find values of `chi` and `xi` that are consistent with the prior quantiles even when admissible values exist, which is a source of frustration. Another difficult is that sometimes the "right" values of `chi` and `xi` imply a GLD that is bounded on one or both sides even though the user intended for all real numbers to be in the parameter space. There is not a lot that can be done about that, except print a warning.
+
+
 ## Category (2)
 
 For distributions like the metalog, there would be an exposed helper function with a `_coef` postfix that inputs vectors (or real arrays) of `depths` and `quantiles` and outputs the implied vector of `coefficients` after thoroughly checking for validity (and throwing an exception otherwise)
