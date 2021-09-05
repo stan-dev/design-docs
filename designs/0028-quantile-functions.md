@@ -121,9 +121,9 @@ return_type_t<T_p, T_loc, T_scale> cauchy_qdf(const T_p& p,
 ```
 Here there is a minor issue of whether the signature of the `cauchy_qdf` should also take `mu` as an argument, even though the quantile density function does not depend on `mu`.
 
-The Generalized Lambda Distribution (GLD) is a flexible probability distribution that can either be bounded or bounded on one or both sides depending on the values of its four hyperparameters. The GLD is not in Stan Math currently but is defined by its explicit quantile function since its CDF and PDF are not explicit functions. There are actually several parameterizations of the GLD quantile function that are not entirely equivalent, but the preferable parameterization looks like this in Stan code (when the median is zero and the interquartile range is one)
+The Generalized Lambda Distribution (GLD) is a flexible probability distribution that can either be bounded or bounded on one or both sides depending on the values of its four hyperparameters. The GLD is not in Stan Math currently but is defined by its explicit quantile function since its CDF and PDF are not explicit functions. There are actually several parameterizations of the GLD quantile function that are not entirely equivalent, but the preferable parameterization looks like this in Stan code
 ```
-     Standard Generalized Lambda Distribution quantile function
+     Generalized Lambda Distribution helper function
   
      See equation 11 of
      https://mpra.ub.uni-muenchen.de/37814/1/MPRA_paper_37814.pdf
@@ -133,7 +133,7 @@ The Generalized Lambda Distribution (GLD) is a flexible probability distribution
      @param xi real steepness parameter between  0 and 1
      @return real number that can be scaled and shifted to ~GLD
    */
-  real std_gld_qf(real p, real chi, real xi) {
+  real S(real p, real chi, real xi) {
     real alpha = 0.5 * (0.5 - xi) * inv_sqrt(xi * (1 - xi));
     real beta  = 0.5 * chi * inv_sqrt(1 - square(chi));
     if (chi < -1 || chi > 1) reject("chi must be between -1 and 1");
@@ -161,10 +161,11 @@ The Generalized Lambda Distribution (GLD) is a flexible probability distribution
     return not_a_number(); // never reaches
   }
 ```
-The quantile function of the general GLD would be like
+The quantile function of the GLD would then be like
 ```
 real gld_qf(p, real median, real iqr, real chi, real xi) {
-  return median + iqr * std_gld_qf(p, chi, xi);
+  return median + iqr * (S(p, chi, xi) - S(0.5, chi, xi)) 
+    / (S(0.75, chi, xi) - S(0.25, chi, xi));
 }
 ```
 In this case, the GLD is guaranteed to be strictly increasing if the stated inequality conditions on `chi` and `xi` are satisfied. However, if the user supplies a prior median, prior lower / upper quartiles, and one other pair of a depth and a quantile, it is not guaranteed that there is any GLD quantile function that runs exactly through those four points. We can provide a helper function that takes 
