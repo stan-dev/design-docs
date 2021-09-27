@@ -1,4 +1,4 @@
-- Feature Name: deprecation_schedule
+- Feature Name: language\_deprecation\_schedule
 - Start Date: 2021-09-21
 - RFC PR: (leave this empty)
 - Stan Issue: (leave this empty)
@@ -7,8 +7,8 @@
 [summary]: #summary
 
 Introduce a process by which minor features can be removed from the Stan
-language following a 1 year (3 minor release) period of deprecation. 'Minor
-features' is here broadly defined to mean syntactic changes that are one-line
+language following a 1 year (3 minor release) period of deprecation. "Minor
+features" is here broadly defined to mean syntactic changes that are one-line
 updates, such as replacing `<-` with `=` or renaming a variable/function.
 
 # Motivation
@@ -49,19 +49,17 @@ if we have made a poor choice.
 [guide-level-explanation]: #guide-level-explanation
 
 Deprecated minor features may be removed from Stan during minor version changes.
-Here, 'minor change' is restricted to be changes which can be done automatically
+Here, "minor change" is restricted to be changes which can be done automatically
 through the use of the stanc3 canonicalizer, or a user-driven find and replace
-operation. By their very nature, minor changes are primarily syntactic. This is
-in contrast to 'major changes', which are by their nature semantic, and require
+operation. By their very nature, minor changes are syntactic. This is
+in contrast to "major changes", which are by their nature semantic, and require
 human-in-the-loop reasoning to accommodate. Major changes, such the interface
 changes to the differential equation solvers, may be announced via deprecation
 warnings in minor versions, but will not be implemented/removed prior to a
 version 3.0.0.
 
-A minor feature must be deprecated for a minimum of 3 minor versions
-(approximately 1 year on the current release schedule) before removal. The exact
-timeline for a feature's removal will be decided during the development which
-would mark it as deprecated.
+A minor feature must be deprecated for one year (approximately three minor
+versions on the current release schedule) before removal.
 
 A minor feature is deprecated and a candidate for future removal when:
 1. stanc emits a compile-time warning with the following 3 parts:
@@ -69,25 +67,32 @@ A minor feature is deprecated and a candidate for future removal when:
        is deprecated".
     2. An _action_ the user should take, such as "Use = instead". If stanc3 can
        automate this for them, we should call that out, leading to a full
-       message like "Use = instead or run stanc3 --print-canonical to update
-       print an updated version of your code."
+       message like
+       "Use = instead of <- for assignment;  this can be
+       automatically changed by running:
+       stanc3 --print-canonical <stan-program-file>"
     3. A timeline which includes a date or version after which this feature is
        slated for removal, for example "This deprecation will expire in Stan
        version 2.31.0 (expected Sept. 2022)".
 2. It has been added to the [documentation on
    deprecation](https://mc-stan.org/docs/reference-manual/deprecated-features-appendix.html)
    with the same 3 pieces of information, and additional information as needed
-   (such as any of: reasoning for removal, advantages of new behavior, ongoing
-   related changes, etc).
+   (e.g. reasons for removal, advantages of new behavior, ongoing
+   related changes, etc.).
 3. Examples in the documentation have been updated to remove any examples of the
-   deprecated syntax, except for those referring to its deprecation. This change
-   may lag behind bullets 1 and 2, but must occur before the removal.
+   deprecated syntax, except for those referring to its deprecation.
 
 Our goal is to only deprecate a feature when doing so provides a tangible
-benefit to users, such as improving error messaging or allowing new features to
-be added to the language while keeping a low maintenance burden. Changes should
-never take users (even those with many or large models) long to adjust to, and
-as few such changes should be made in each version as is reasonable.
+benefit to users, such as improving error messaging, or drastically simplifies
+the developer experience by allowing new features while keeping a low
+maintenance burden. Changes should never take users (even those with many or
+large  models) long to adjust to.
+
+
+For any minor features which have been deprecated prior to this proposals
+acceptance, we will consider the first version after this policy is enacted to
+be their "deprecation version" after updating the documentation and warnings
+accordingly, and remove them 3 minor versions later.
 
 
 # Reference-level explanation
@@ -96,59 +101,66 @@ as few such changes should be made in each version as is reasonable.
 ## Developers
 From a developer standpoint, this policy is rather straightforward. When a
 change is made, it should identify any deprecation candidates: new keywords that
-must be implemented (thus 'deprecating' the use of that word as a identifier),
+must be implemented (thus deprecating the use of that word as a identifier),
 new syntax which supersedes prior syntax, (such as `=` or `array[]`), or a
-similar **syntax-level** change. If supporting both the new and old way of doing
-things requires a 'hack' or difficult to maintain code, this is a prime
-candidate for this deprecation-removal process. If a change meaningfully changes
-the semantics of the language, it is not.
+similar _syntax-level_ change. If supporting both the new and old way of doing
+things requires a "hack" or difficult to maintain code, this is a prime
+candidate for this removal process in minor versions. If a change meaningfully
+alters the semantics of the language, it must wait until a major version bump
+(currently this would mean Stan version 3.0.0).
 
->Current examples include the use of 'partial keywords' like offset,
->which are not reserved words but act like them in some contexts, or multiple
->syntaxes which lead to parsing difficulties, like the new array syntax. We would
->like to not only improve the error messaging and implementation of these current
->features, but also avoid introducing new issues of this variety in the long term.
+- Current examples include the use of partial keywords like "offset",
+  which are not reserved words but act like them in some contexts, or multiple
+  syntaxes which lead to parsing difficulties, like the new array syntax. We would
+  like to not only improve the error messaging and implementation of these current
+  features, but also avoid introducing new issues of this variety in the long
+  term. These can be changed in minor versions following this process.
 
->Current non-examples include the ODE solver interface changes, which requires
->changes to the user-defined function defining the ODE.
+- Current non-examples include the ODE solver interface changes, which requires
+  changes to the user-defined function defining the ODE. These should wait for
+  major versions.
 
 Once it has been decided to deprecate a feature, the lexer, parser, or
-typechecker (whichever is most apropriate) should be updated to emit a
-compile-time warning notifying the user. This must contain the above 3 criteria:
+type checker (whichever is most appropriate) should be updated to emit a
+compile-time warning notifying the user. The warning must contain the three
+pieces of information specified above:
 1. What is deprecated
-2. How to adjust your code
-3. When you need to adjust it by.
+2. How to adjust code to replace the deprecated feature
+3. Which version the deprecated feature will be removed in
 
-The final bullet point should be decided during the review process with 3
-versions as a minimum. Many changes, such as reserving a new keyword, will not
-require longer periods, but syntax changes which the user may need time to
-adjust to could require longer time frames.
+The final piece of information should correspond to the version released
+approximately one year following the version which first emits the warning.
+Given the current Stan release cycle, this should be three versions later. For
+example, a deprecation added in version 2.28.0 should expire in 2.31.0. Note
+that deprecations should only be added or removed in minor versions, not bug fix
+versions.
 
-This information must also be added to the documentation in the accompanying PR
-to the change.
+These three pieces of information must also be added to the documentation in the
+accompanying PR to the change.
 
-Finally, developers may wish to weigh in on how the implementation might look
-after the removal of the deprecated feature as part of the text of the pull
-request, if they can foresee code improvements which can occur at that time.
+Finally, developers may weigh in on how the language implementation can be
+simplified after the removal of the deprecated feature as part of the text of the pull
+request.
 
 ## Code reviewers
-From a code reviewer standpoint, it is important to ask the following questions:
+From a code reviewer standpoint, it is important to ask the following questions.
 1. Is this deprecation tied to a useful feature or noticeable improvement to the
-   underyling code (not just 'for the sake of it')?
-2. Does the new warning meet the criteria above and explain itself clearly?
+   underyling code?
+2. Does the new warning contain the required information listed above and
+   explain itself clearly?
 3. Is there a simple (preferably automated) way for users to accommodate this
-   change, e.g. through the `print-canonical` flag to stanc3 or a
-   find-and-replace feature of their text editor?
-4. Is the removal timeline appropriate for this change?
+   change (e.g., through the `print-canonical` flag to stanc3 or a
+   find-and-replace feature of their text editor)?
+
 
 ## Releases
-Finally, during the release cycle an additional bullet point should be added to
-the release checklist to ensure that the deprecations slated for removal in the
-coming version have been properly handled. To accommodate this, the documentation
-page on deprecations should be sorted/categorized by removal version.
+During the release cycle a bullet point should be added to the release
+checklist to ensure that the deprecations slated for removal in the coming
+version have been properly handled. To accommodate this, the documentation page
+on deprecations should be sorted/categorized by removal version.
 
-Additionally, the release notes should contain a section on **Deprecations** and
-**Expired Deprecations** (alt. **Removals**) for each version. This should
+The release notes should contain a section on **Deprecations** and
+**Breaking Changes** (alt. **Removed Features**) for each version. This should
 duplicate the information on the what and how of the change from the error
 message and documentation.
 
@@ -156,22 +168,19 @@ message and documentation.
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Drawbacks to this are rather obvious - backwards compatibility is certainly a
-virtue, and any breaking change will lead to some headaches for a portion of the
-user base, no matter how small. In the limit, we certainly want to avoid any
-large enough change that users prefer not to update (a core reason these changes
-should be tied to improvements in the language, not just for their own sake) and
-any changes which require dedicated rewriting or rethinking of models. This
-desire motivated the definition of 'minor change' above and the restriction to
-primarily automatable syntax changes.
+Backwards compatibility is certainly a virtue, and any breaking change will lead
+to some headaches for a portion of the user base, no matter how small.
+
+At the most extreme end of drawbacks, it is possible for changes in a language
+to be so large that users prefer not to update. This proposal was crafted with a
+limited scope in particular to attempt to avoid this concern.
+
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-This design allows for us to care for the long term health of the Stan language
-and codebase while clearly communicating our intent to users. Small changes can
-be made to make the development of new features easier without "sneaking up on"
-anyone or breaking things willy-nilly.
+ Deprecating features empowers developers to improve the language, without
+ introducing breaking changes that sneak up on users.
 
 There are two main alternatives to this proposal:
 1. The first is to stick strictly to the semantic versioning standards, and make
@@ -183,8 +192,8 @@ There are two main alternatives to this proposal:
    accumulating in the meantime. Additionally, saving all such minor changes for
    a major version bump dramatically increases the friction for updating. While
    some may find it preferable to have to update their models only once, the
-   small requirement of (at most) 1-2 changes per version is likely preferable
-   to the many required changes a major version would bring.
+   smaller and more frequent changes are likely preferable to the many required
+   changes intermittent major versions bring.
 
 2. Do not allow the deprecation of features. If we do not plan on actually
    removing deprecations, emitting warnings to the user is simply annoying and
@@ -214,7 +223,7 @@ There are two main alternatives to this proposal:
   [NEP-23](https://numpy.org/neps/nep-0023-backwards-compatibility.html#implementing-deprecations-and-removals).
   The NumPy project provides a similar example of a large open-source code base
   whose minor version number has now exceeded 20 (meaning a large number of
-  changes since the last 'breaking'/major version).
+  changes since the last "breaking"/major version).
 - Python itself defines a similar policy in
   [PEP-387](https://www.python.org/dev/peps/pep-0387/) which requires warnings
   emitted for 2 minor versions or 1 major version (e.g, a feature deprecated in
@@ -230,7 +239,7 @@ There are two main alternatives to this proposal:
   > By not removing deprecated features from an API after a transition period
   > has passed, API producers and the Java JDK developers themselves have
   > cheapened the meaning of deprecation.
-- https://semver.org/ - the description of proper 'semantic versioning'. In the
+- https://semver.org/ - the description of proper "semantic versioning". In the
   strictest interpretation, Stan already deviates from this scheme with some
   regularity, but it is a common understanding of the major.minor.patch
   versioning.
@@ -240,14 +249,10 @@ There are two main alternatives to this proposal:
 
 - Above I set the term of deprecations at 3 minor versions/1 year. This may be
   too long for some features and too short for others, and is worth discussing.
-- We have many existing deprecations which predate this proposed policy. How
-  they should be handled or removed is not explicitly covered; the easiest path
-  is to consider the first version after this policy is enacted to be their
-  'deprecation version', and remove them 3 minor versions later.
 - This is independent of questions about larger features like the ODE solver
   changes and the potential of a Stan version 3.0, but these should be
   considered when thinking of the long term health of the project as well. How
-  to handle the 'major' or semantic changes to the language is not resolved by
+  to handle the "major" or semantic changes to the language is not resolved by
   this proposal.
 - At the moment, we tend to not backport bug fixes if we fix them in the next
   minor version. We may want to consider this or some other sort of long-term
