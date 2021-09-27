@@ -34,7 +34,7 @@ of new keywords.
 These are issues that stem from either the inability to make minor changes to
 the language, or from the current lack of process to introduce these changes.
 The solution to both of them is rather simple from a user perspective - the new
-`array[]` syntax can be automatically produced by out pretty-printer, and it is
+`array[]` syntax can be automatically produced by our pretty-printer, and it is
 easy to rename a variable, but this must be clearly and consistently
 communicated to our users.
 
@@ -67,10 +67,13 @@ A minor feature is deprecated and a candidate for future removal when:
 1. stanc emits a compile-time warning with the following 3 parts:
     1. A description of the deprecated feature, such as "Use of <- for assignment
        is deprecated".
-    2. An _action_ the user should take, such as "Use = instead."
+    2. An _action_ the user should take, such as "Use = instead". If stanc3 can
+       automate this for them, we should call that out, leading to a full
+       message like "Use = instead or run stanc3 --print-canonical to update
+       print an updated version of your code."
     3. A timeline which includes a date or version after which this feature is
        slated for removal, for example "This deprecation will expire in Stan
-       vdepersion 2.31.0 (expected Sept. 2022)".
+       version 2.31.0 (expected Sept. 2022)".
 2. It has been added to the [documentation on
    deprecation](https://mc-stan.org/docs/reference-manual/deprecated-features-appendix.html)
    with the same 3 pieces of information, and additional information as needed
@@ -94,8 +97,8 @@ as few such changes should be made in each version as is reasonable.
 From a developer standpoint, this policy is rather straightforward. When a
 change is made, it should identify any deprecation candidates: new keywords that
 must be implemented (thus 'deprecating' the use of that word as a identifier),
-new syntax which supsercedes a prior syntax, (such as `=` or `array[]`), or a
-similar **syntatic** change. If supporting both the new and old way of doing
+new syntax which supersedes prior syntax, (such as `=` or `array[]`), or a
+similar **syntax-level** change. If supporting both the new and old way of doing
 things requires a 'hack' or difficult to maintain code, this is a prime
 candidate for this deprecation-removal process. If a change meaningfully changes
 the semantics of the language, it is not.
@@ -124,6 +127,10 @@ adjust to could require longer time frames.
 This information must also be added to the documentation in the accompanying PR
 to the change.
 
+Finally, developers may wish to weigh in on how the implementation might look
+after the removal of the deprecated feature as part of the text of the pull
+request, if they can foresee code improvements which can occur at that time.
+
 ## Code reviewers
 From a code reviewer standpoint, it is important to ask the following questions:
 1. Is this deprecation tied to a useful feature or noticeable improvement to the
@@ -131,8 +138,8 @@ From a code reviewer standpoint, it is important to ask the following questions:
 2. Does the new warning meet the criteria above and explain itself clearly?
 3. Is there a simple (preferably automated) way for users to accommodate this
    change, e.g. through the `print-canonical` flag to stanc3 or a
-   find-and-replace feature of their text editor.
-4. Is the removal timeline appropriate for this change.
+   find-and-replace feature of their text editor?
+4. Is the removal timeline appropriate for this change?
 
 ## Releases
 Finally, during the release cycle an additional bullet point should be added to
