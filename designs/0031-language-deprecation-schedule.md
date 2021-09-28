@@ -89,7 +89,7 @@ maintenance burden. Changes should never take users (even those with many or
 large  models) long to adjust to.
 
 
-For any minor features which have been deprecated prior to this proposals
+For any minor features which have been deprecated prior to this proposal's
 acceptance, we will consider the first version after this policy is enacted to
 be their "deprecation version" after updating the documentation and warnings
 accordingly, and remove them 3 minor versions later.
@@ -104,10 +104,11 @@ change is made, it should identify any deprecation candidates: new keywords that
 must be implemented (thus deprecating the use of that word as a identifier),
 new syntax which supersedes prior syntax, (such as `=` or `array[]`), or a
 similar _syntax-level_ change. If supporting both the new and old way of doing
-things requires a "hack" or difficult to maintain code, this is a prime
+things requires a "hack" or difficult to maintain code, it is a prime
 candidate for this removal process in minor versions. If a change meaningfully
-alters the semantics of the language, it must wait until a major version bump
-(currently this would mean Stan version 3.0.0).
+alters the semantics of the language, it must wait until a major version bump to
+occur (currently this would mean Stan version 3.0.0), even if the deprecation is
+announced during a minor version update.
 
 - Current examples include the use of partial keywords like "offset",
   which are not reserved words but act like them in some contexts, or multiple
@@ -130,10 +131,10 @@ pieces of information specified above:
 
 The final piece of information should correspond to the version released
 approximately one year following the version which first emits the warning.
-Given the current Stan release cycle, this should be three versions later. For
-example, a deprecation added in version 2.28.0 should expire in 2.31.0. Note
-that deprecations should only be added or removed in minor versions, not bug fix
-versions.
+Given the current Stan release cycle, this time frame should mean three versions
+later. For example, a deprecation added in version 2.28.0 should expire in
+2.31.0. Note that deprecations should only be added or removed in minor
+versions, not bug fix versions.
 
 These three pieces of information must also be added to the documentation in the
 accompanying PR to the change.
@@ -160,9 +161,9 @@ version have been properly handled. To accommodate this, the documentation page
 on deprecations should be sorted/categorized by removal version.
 
 The release notes should contain a section on **Deprecations** and
-**Breaking Changes** (alt. **Removed Features**) for each version. This should
-duplicate the information on the what and how of the change from the error
-message and documentation.
+**Breaking Changes** (alt. **Removed Features**) for each version. This section
+should duplicate the information on the what and how of the change from the
+error message and documentation.
 
 
 # Drawbacks
@@ -249,11 +250,10 @@ There are two main alternatives to this proposal:
 
 - Above I set the term of deprecations at 3 minor versions/1 year. This may be
   too long for some features and too short for others, and is worth discussing.
-- This is independent of questions about larger features like the ODE solver
-  changes and the potential of a Stan version 3.0, but these should be
-  considered when thinking of the long term health of the project as well. How
-  to handle the "major" or semantic changes to the language is not resolved by
-  this proposal.
+- This proposal is independent of questions about larger features like the ODE solver
+  changes and the when and what of a Stan version 3.0. How to handle the "major"
+  or semantic changes to the language is not resolved by this proposal, aside
+  from the remark that they require major version bumps.
 - At the moment, we tend to not backport bug fixes if we fix them in the next
   minor version. We may want to consider this or some other sort of long-term
   support schedule if we begin introducing any sort of breaking changes.
