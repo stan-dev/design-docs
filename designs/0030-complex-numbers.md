@@ -95,7 +95,7 @@ These accessors do not work as lvalues.
 
 ### Equality
 
-Equality for scalars is defined component-wise, so that if `z1` and `z2` are are complex typed variables, then `z1 == z2` is true if `to_rea(z1) == to_real(z2)` and `to_real(z1) == to_real(z2)`.
+Equality for scalars is defined component-wise, so that if `z1` and `z2` are are complex typed variables, then `z1 == z2` is true if `get_real(z1) == get_real(z2)` and `get_imag(z1) == get_imag(z2)` are true.  Usage is as follows.
 
 ```
 complex z1;
@@ -103,7 +103,7 @@ complex z2;
 if (z1 == z2) { ... }
 ```
 
-Note that this imports all of the usual difficulties of comparing floating-point numbers. Testing for equality of floating point and hence complex numbers should be avoided if possible.  Because of promotion, equality can apply to complex numbers mixed with real or integers.
+Note that comparing complex numbers inherits all of the usual difficulties of comparing floating-point numbers. Testing for equality of floating point and hence complex numbers should be avoided if possible.  Because of promotion, equality can apply to complex numbers mixed with real or integers.
 
 ### Promotion and function arguments
 
