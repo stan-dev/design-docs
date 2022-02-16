@@ -58,18 +58,6 @@ The following four basic data types will handle all of the complex number functi
 
 As usual, arrays can be constructed from any of these types.
 
-### Constrained data types [Optional]
-
-Lower and upper bounds could be construed as bounds on absolute value (or modulus) of a complex number, with
-```
-complex<lower = 1> z;
-```
-requiring `modulus(z) > 1`, where $\mod x + yi = \sqrt{x^2 + y^2}.$  Upper bounds and mixed upper and lower bounds work the same way.  The bounds are real valued.
-
-Lower and upper bound constraints can be applied to any of the complex types.
-
-This feature is included for completeness, but marked "optional" because it is not clear it will be useful as realistic complex constraints are typically multivariate.
-
 
 ### Constructors
 
@@ -78,46 +66,41 @@ A complex number is constructed from a pair of real numbers, one representing th
 ```
 real r;
 real i;
-complex z = complex(r, i);
+complex z = to_complex(r, i);
 ```
 
 This overloads the type name in the same way as a C++ constructor.  `to_complex` seems too wordy and `cmplx` too cryptic.
 
-### Accessor lvalues
+### Imaginary literals
+
+Imaginary literals are formed the same way as in MATLAB, R, and Python using a real literal followed by a letter.  In Stan's case, we use `i`.  That means that `3i`, `-2.9i` or `157.23458i` are all complex numbers with the specified imaginary component and a zero real component.  These can be put together with addition to construct complex numbers using mathematical notation.
+
+```
+complex z = 3 - 2.9i;
+```
+
+### Accessors
 
 The real and imaginary components of a complex number may be accessed as follows.
 
 ```
 complex z;
 ...
-real r = z.real;
-real i = z.imag;
+real r = get_real(z);
+real i = get_imag(z);
 ```
 
-This follows the C++, Java, and Python conventions for accessing components of structures (including tuples), which is also Stan's proposal for implementing tuple accessors.
+These accessors do not work as lvalues. 
 
-It uses the C++ standard library's naming convention for the components.
-
-These accessors work as lvalues, so that the following will be allowed
-
-```
-complex z;
-...
-z.real = 5.2;
-```
-
-with the result being that `z` now has 5.2 as its real component.
-
-This behavior mirrors Stan's design for tuples.
 
 ### Equality
 
-Equality for scalars is defined component-wise, so that `z1 == z2` for complex typed variables `z1` and `z2` is true if `z1.real == z2.real` and `z1.imag == z2.imag`.  
+Equality for scalars is defined component-wise, so that if `z1` and `z2` are are complex typed variables, then `z1 == z2` is true if `to_rea(z1) == to_real(z2)` and `to_real(z1) == to_real(z2)`.
 
 ```
 complex z1;
 complex z2;
-int a = (z1 == z2);
+if (z1 == z2) { ... }
 ```
 
 Note that this imports all of the usual difficulties of comparing floating-point numbers. Testing for equality of floating point and hence complex numbers should be avoided if possible.  Because of promotion, equality can apply to complex numbers mixed with real or integers.
@@ -159,21 +142,19 @@ int a = z;  // ILLEGAL
 real b = z;  // ILLEGAL
 ```
 
-As of now, there is no general promotion for arrays, and there are only real-valued matrices.  With the introduction of complex-valued vectors and matrices, Stan will need to support assignment of real-valued vectors and matrices to their complex counterparts.  That is,
+In the same way that we can assign an `array[] int` to an `array[] real`, we will be able to assign `array[] int` and `array[] real` to `array[] complex`.
 
 ```
-real_matrix[2, 3] x;
-complex_matrix[2, 3] z = x;
+array[2] int n;
+array[2] real x;
+array[2] complex z;
+z = x;  // legal
+z = n;  // legal
+x = z;  // ILLEGAL
+n = z;  // ILLEGAL
 ```
 
-is legal (and similarly for vector and row-vector types), but
-
-```
-complex_matrix[3, 4] u;
-real_matrix[3, 4] x = u;  // ILLEGAL
-```
-
-This carries through to calling functions, too.
+Calling functions works the same way as assignment.
 
 ## Function support
 
@@ -262,9 +243,9 @@ The C++ model class uses an object of class `var_context` to input variables dec
 
 ### Parameter output format
 
-Parameters are output as an array.  Complex numbers will be sequenced with their real components before their imaginary components.  The output names for a complex variable `z` will be `z.r` and `z.i` for the real and imaginary components.
+Parameters are output as an array.  Complex numbers will be sequenced with their real components before their imaginary components.  The output names for a complex variable `z` will be `z.real` and `z.imag` for the real and imaginary components.
 
-For containers of complex numbers, the natural order is to indicate container indexing first.  For example, an entry for a matrix might look like `z.2.3.r` for the real component of the complex element at row 2 and column 3.
+For containers of complex numbers, the natural order is to indicate container indexing first.  For example, an entry for a matrix might look like `z.2.3.real` for the real component of the complex element at row 2 and column 3.
 
 
 ## File I/O formats
@@ -290,16 +271,16 @@ but that's going to be far too verbose.
 
 ### R dump format input
 
-We can adopt the standard R dump format for complex number output, which separates the real and imaginary component with the 
+The R dump format treats a complex number as a pair.  For a complex number with real component 3 and imaginary component 1.5, the R dump format is
 
 ```
-z1 <- 3-1.5i
-z2 <- 2.3+4.7i
+z1 <- c(3, 1.5)
 ```
+
 
 ## Rationale and alternatives
 
-Most of these proposals are just applying the simplest possible thing that is mathematically and computationally coherent.  For example, it's natural to promote `real` to `complex` in mathematics, so we allow it in the language.  Similarly, it's natural to 
+Most of these proposals are just applying the simplest possible thing that is mathematically and computationally coherent.  For example, it's natural to promote `real` to `complex` in mathematics, so we allow it in the language.
 
 ### Container type alternative
 
@@ -307,30 +288,22 @@ It might be tempting to try to decompose types as C++ does, for example using `m
 
 For example, complex numbers do *not* work with constraints.  It does not make sense to write `complex<lower = 0> z` or `complex<offset = 7>`.  
 
-### Full covariance
 
-The biggest issue is how much covariance do we want to support given that it's not yet fully supported for `int` and `real`.  For example, it'd be nice to allow assignment of `int[]` to `real[]` and of `real[]` to `complex[]`.
 
-### Constructor alternatives
+### R dump alternatives
 
-We could use a simple pair structure instead of `complex(r, i)`, such as `{ r, i }`, `<r, i>`, or `[r, i]`, e.g.,
+Eventually, we might be able to adopt the standard R dump format for complex numbers, which separates the real and imaginary component with the 
+
 ```
-complex z = { r, i };
+z1 <- 3-1.5i
+z2 <- 2.3+4.7i
 ```
-but these notations are already used for arrays, constraints, and row vectors respectively.
-
 
 ### Accessor alternatives 
 
 For accessors, we could use method-like notation, such as `z.real()`, but Stan does not use this kind of object-oriented notation elsewhere and it is less clear that the result can be used an lvalue.
 
-### Offset and multiplier addition
-
-In addition to lower and upper bound constraints, it'd be possible to use complex offsets and multipliers, 
-```
-complex<offset = o, multiplier = m> z;
-```
-Here, the offset and multiplier could be complex scalars or real scalars or integers.
+We could also use accessors `z.real` and `z.complex` to parallel the design for tuples.
 
 
 ## Prior art
@@ -345,7 +318,7 @@ The prior art this proposal draws on includes
 * the C++ data type `complex` and associated operations from the `<complex>` header in the standard library,
 * the Eigen C++ matrix library's handling of complex scalars, vectors, and matrices,
 * R's standard dump format for complex numbers, and
-* Python encodings of complex numbers and example of extending JSON to complex numbers.
+* Python and MATLAB and R encodings of complex numbers and example of extending JSON to complex numbers.
 
 This proposal follows all of this prior art directly.
 
