@@ -195,7 +195,7 @@ usually require much tighter coupling with the core language.
 
 The name, style, and purpose of annotations in Stan is very similar to how
 [Java solves the same
-problem](https://docs.oracle.com/javase/tutorial/java/annotations/).
+problem](https://docs.oracle.com/javase/tutorial/java/annotations/) ([JSR-175](https://www.jcp.org/en/jsr/detail?id=175)).
 
 The use of the `@` sign is also used in Python's decorator syntax
 ([PEP-318](https://www.python.org/dev/peps/pep-0318/)). Similar syntax is used
