@@ -208,6 +208,9 @@ The usage is also similar to the
 annotations](https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html#Common-Function-Attributes)
 available in C and C++.
 
+Finally, annotations (and specifically the `@silent` annotation) were included
+in [early designs for the stanc3 compiler](https://github.com/seantalts/stan3/tree/170e6afc5b0e00dc5f201a25a881b7aa11f679b2#stan-3-language-goals).
+
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
@@ -216,3 +219,7 @@ available in C and C++.
   we provide a general strucure for user-compiler communication, there will be
   opportunities to use it that are difficult to foresee now, in addition to the
   obvious ones discussed above as examples.
+- Should multiple annotations be allowed on one declaration? This does not pose
+  any additional implementation cost, but does lead to questions of what to do
+  if two contradictory or incompatible annotations are applied to the same
+  declaration.
