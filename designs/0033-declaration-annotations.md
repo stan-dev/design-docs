@@ -65,10 +65,11 @@ parameters {
 
 Annotations can be identifiers, like the above examples, or they can be more
 complicated. An annotation ends when it encounters a space, except if there are
-parenthesis used, in which case it ends when the final `)` is reached.
+parentheses used, in which case it ends when the final `)` is reached.
 
 ``` stan
 @bar(1, 2, 3) vector[N] alpha;
+@this(is( fine )) matrix[N,N] B;
 ```
 
 Annotations are optional - both to you, and to the compiler. You may write
@@ -78,7 +79,7 @@ compiler will ignore* any annotation it does not recognize.
 
 ### Why Use Annotations
 
-Annotations give "hints" to Stan about details of how to treat your model. For
+Annotations give hints to Stan about details of how to treat your model. For
 example, if you are using a backend which supports computation on GPUs, then the
 annotation
 
@@ -88,7 +89,7 @@ annotation
 
 Can give the compiler an extra push toward allocating `p` in the GPU's memory
 rather than in standard RAM. The optional nature means that a model with this
-annotation can also be used - without modification - in backends that do not
+annotation can also be used-without modification-in backends that do not
 support GPU computation, and it will be safely ignored.
 
 ### Example Annotations
@@ -98,20 +99,20 @@ optimization settings. Please consult (link to backend specific documentation).
 
 (Author's Note: This design doc does not specifically endorse or propose any of
 these, they are all provided as examples which this larger framework would
-allow. A key feature, however, is that none of these are really new *features* -
-they do not increase the expressiveness of Stan, only allow tweaks and
-efficiency considerations)
+allow. A key feature, however, is that none of these are really new
+*features*-they do not increase the expressiveness of Stan, only allow tweaks
+and efficiency considerations)
 
 - `@gpu` - When used on variables, indicate to the compiler that you desire this
   variable to be placed in GPU memory and optimized for GPU computation.
-- `@static` - When placed on a variable, indicate that it will not be edited and
+- `@const` - When placed on a variable, indicate that it will not be edited and
   is a candidate for Struct-of-Array optimizations.
 - `@silent` - Can be placed on a variable to prevent it from being in the output
   of the Stan sampler.
 - `@extern` - When placed on a function declaration, mark it as not needed a
   definition in the program. This is equivalent to a more targeted version of
   the `--allow-undefined` flag available for stanc3.
-- `@grad(foo,1)` - This annotation, when placed on a function, indicates that this
+- `@grad_adj_jac(foo,1)` - This annotation, when placed on a function, indicates that this
   function defines the derivative of another function called `foo` along the
   first argument to said function.
 - `@inline` - This annotation suggests that the compiler should specifically
