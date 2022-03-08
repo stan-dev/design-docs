@@ -6,7 +6,8 @@
 # Summary
 [summary]: #summary
 
-Provide alternative output formats for the outputs of the Stan platform services methods supported by CmdStan.
+Provide alternatives to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
+for outputs of the Stan platform services methods supported by CmdStan.
 
 # Motivation
 [motivation]: #motivation
@@ -31,6 +32,14 @@ and this comment header continues to accumulate new bits of information about pr
 The NUTS-HMC methods output a series of comment lines which contain the stepsize and metric.
 The sample methods also record timing information at the end.
 
+In order to monitor the progress of CmdStan's inference algorithms,
+the outputs from CmdStan must be available to downstream readers on a streaming basis.
+To facilitate monitoring different aspects of the algorithm, a more granular set of outputs,
+instead of a single CSV file would make this task easier.
+Another consideration is the use of multi-chain methods; currently multi-chain NUTS-HMC and in the future,
+multi-chain Pathfinder.  When running any kind of ensemble method, we need to record the process/chain_id
+and make this available 
+
 Therefore we need to re-implement the set of output methods used by CmdStan and the core Stan services
 to capture more information in a more structured way.
 At the same time, we need to continue to support the current Stan CSV format in order to support existing downstream processing packages.
@@ -48,13 +57,15 @@ There are three sources of information:
 1. Stan program outputs: estimates for all model parameters, transformed parameters, and generated quantities.
 
 2. Inference engine outputs: various diagnostics.
-For the NUTS-HMC sampler, the current outputs are the stepsize and metric, and the per-iteration sampler state.
+For the NUTS-HMC sampler, the current outputs are the stepsize and metric, and the per-iteration sampler variables (state).
 The optimization and variational algorithms also report on their respective iterations.
 
 3. Interface-level outputs:
    + model name, compile options, Stan compiler and (Cmd)Stan version and compile options.
-   + inference algorithm, user-specified configuration options, and default config
-   + input and output data descriptors
+   + inference algorithm, user-specified configuration options, and default config.
+   + input and output data descriptors.
+   + process-level information:  chain, iteration.
+   + timing information: timestamp information reported by processing events.
 
 There are two general kinds of information structure: tabular and hierarchical.
 [CSV files](https://en.wikipedia.org/wiki/Comma-separated_values) are tabular,
@@ -88,7 +99,7 @@ in order of declaration in the Stan program.
 The model class methods `constrained_param_names`, `unconstrained_param_names`, `get_constrained_sizedtypes`, `get_unconstrained_sizedtypes`
 provide name, type, and shape information.
 The reason that the model reports on both the constrained and unconstrained parameters is the Stan parameter types
-simplex, correlation, covariance, and cholesky factors have different shapes on the constrained, unconstrained scale.
+simplex, correlation, covariance, and Cholesky factors have different shapes on the constrained, unconstrained scale.
 For example, a simplex parameter is a vector whose elements sum to one on the constrained scale which means that it has $N-1$ free parameters
 when computing on the unconstrained scale.
 The Stan model parameter inputs and outputs are on the *constrained* scale, therefore the number of parameter values reported by the `write_array` method
