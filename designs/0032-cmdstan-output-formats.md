@@ -20,10 +20,10 @@ The CSV format is not precisely defined.  Common usage allows
 allows the first row of data to be treated as a row of column labels
 (the "header row"), and also allows comment rows which start with a designated comment prefix character.
 
-The CSV format was chosen as the output format early in the Stan project's history.
-At that time, the goal was to develop a better MCMC sampler and the CSV file allowed for a
-straightforward representation of the posterior sample one row per draw, one column per output from the Stan program.
-Over time, this file has come to be an amalgam of information about the inference engine configuration,
+Because the initial focus of the project was MCMC sampling, the CSV file allowed for a
+straightforward representation of the posterior sample one row per draw,
+one column per output from the Stan program.
+Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
 the algorithm state, and the algorithm outputs.
 This format is limited and limiting for several reasons.
 
@@ -32,28 +32,19 @@ and a final set of comment rows to report sampler timing information.
 This requires writing ad-hoc parsers to recover this information and precludes the use of many fast CSV parser libraries.
 
 * The Stan CSV file use a single table to hold both the inference algorithm state as well as
-the model estimates.  By convention, the initial columns contain inference algorithm state.
+the model outputs produced by the model class's `write_array`.
+By convention, the initial columns contain inference algorithm state.
 Depending on the kind of inference there will be zero or more such columns whose names end in `__`, e.g. `lp__`.
 
-* For both MCMC and variational inference algorithms, the sampler state is only reported on a per-draw basis,
-precluding reporting of the inner workings of the algorithm, e.g., leapfrog steps, SGD.
+* Because each row of the CSV file corresponds to one draw, there is no way to monitor the inner workings
+of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 
-* Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files.
-It would be preferable to produce a single output file which provides per-draw chain ids.
+* Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
+with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
 
-
-
-outputs from each draw or from each iteration of the algorighm must be 
-the per-draw outputs must be outputs from CmdStan must be available to downstream readers on a streaming basis.
-To facilitate monitoring different aspects of the algorithm, a more granular set of outputs,
-instead of a single CSV file would make this task easier.
-Another consideration is the use of multi-chain methods; currently multi-chain NUTS-HMC and in the future,
-multi-chain Pathfinder.  When running any kind of ensemble method, we need to record the process/chain_id
-and make this available 
-
-Therefore we need to re-implement the set of output methods used by CmdStan and the core Stan services
-to capture more information in a more structured way.
-At the same time, we need to continue to support the current Stan CSV format in order to support existing downstream processing packages.
+To overcome these problems, we need to refactor and extend the core Stan classes which assemble and format program outputs,
+with the goal of providing an alternative to the monolithic CSV output file currently used by CmdStan and therefore by
+the wrapper interfaces CmdStanR and CmdStanPy.
 
 
 # Guide-level explanation
