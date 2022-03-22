@@ -6,17 +6,17 @@
 # Summary
 [summary]: #summary
 
-Provide alternatives to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
+In order to monitor the progress of CmdStan's inference algorithms,
+the outputs from CmdStan must be available to downstream readers on a streaming basis.
+This design provides an alternative to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
 for outputs of the Stan inference algorithms which are exposed by the `stan::services` layer.
 
 # Motivation
 [motivation]: #motivation
 
-
 The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) contains a record
 of the inference algorithm outputs.  This is the output format used by CmdStan, and therefore by the
-CmdStan wrapper interfaces CmdStanPy and CmdStanR.  
-This format is limited and limiting for several reasons.
+CmdStan wrapper interfaces CmdStanPy and CmdStanR  This format is limited and limiting for several reasons.
 
 * While the plain-text format is human readable, the drawbacks are that conversion to/from binary
 is expensive and may lose precision, unless default settings are overridden, which in turn will
@@ -38,17 +38,6 @@ of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 * Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
 with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
 
-A CSV file is designed to hold a single table's worth of data in plain text where
-each row of the file contains one row of table data, and all rows have the same number of fields.
-The CSV format is not precisely defined.  Common usage allows
-allows the first row of data to be treated as a row of column labels
-(the "header row"), and also allows comment rows which start with a designated comment prefix character.
-Because the initial focus of the project was MCMC sampling, the CSV file allowed for a
-straightforward representation of the posterior sample one row per draw,
-one column per output from the Stan program.
-Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
-the algorithm state, and the algorithm outputs.
-
 To overcome these problems, we need to refactor and extend the core Stan output mechanisms
 so that so that the inference algorithm and Stan model outputs are factored into discrete units,
 using output formats which correspond to the structure of the information,
@@ -62,37 +51,52 @@ For a given run of an inference algorithm given a model and data,
 the outputs of interest can be categorized in terms of information source and content
 and information structure.
 
-There are three sources of information:
+The structure of these outputs can be best represented either as table or as a nested list.
+There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
-1. The Stan model, class  [``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp).
-The model class method `log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
-The model class method `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
-The method `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
-Finally, a number of methods provide information about the model itself:  `model_name`, `(un)constrained_param_names`, `get_dims`.
+The Stan model. The Stan services layer helper methods call the Stan model class
+[``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp).
+  +`log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
+  + `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
+  + `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
+  + a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
 
-2. Inference engine outputs: various diagnostics.
-The inference engine outputs are flattened into per-iteration reports.
-For the NUTS-HMC sampler, the current outputs are the stepsize and metric, and the per-iteration sampler variables (state).
-ADVI reports stepsize `eta` and per-iteration state, and 
-The optimization and variational algorithms also report on their respective iterations.
+The Inference algorithm.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`
+and comment blocks are used to report global information, e.g., stepsize and metric for NUTS-HMC and stepsize for ADVI.
+However for complex methods we wish to report on iterative or multi-stage algorithms, e.g., for the NUTS-HMC sampler,
+successive leapfrog steps.  Therefore we need to decouple the outputs from the inference engine from the outputs from the model.
 
-
-3. Interface-level outputs:
+The inference run.  When CmdStan is used to do inference,
+the initial set of comments in the Stan CSV file contain information about the CmdStan run.
    + model name, compile options, Stan compiler and (Cmd)Stan version and compile options.
    + inference algorithm, user-specified configuration options, and default config.
    + input and output data descriptors.
    + process-level information:  chain, iteration.
    + timing information: timestamp information reported by processing events.
 
-There are two general kinds of information structure: tabular and hierarchical.
-[CSV files](https://en.wikipedia.org/wiki/Comma-separated_values) are tabular,
-as are R and Python dataframes and database tables.
-JSON is a [structured data formats](https://en.wikipedia.org/wiki/Data_exchange#Data_exchange_languages)
-which can represent hierarchical structures and arrays.
+We would like to be able to monitor and/or analyze:
+
++ the joint model log probability "lp__"
++ the estimates of individual model variables on either the constrained or unconstrained scales (the latter only applied to parameters and transformed parameters).
++ the inference engine state.
++ correlation/covariance of the model parameters
++ model convergence - R-hat et al
++ effective sample size
+
+For downstream analysis, we need to know the name, type, and structure of the Stan model variables.
 
 ## Current implementation
 
-We review the way in which the current Stan CSV file is generated for a run of the NUTS-HMC sampler.
+A CSV file is designed to hold a single table's worth of data in plain text where
+each row of the file contains one row of table data, and all rows have the same number of fields.
+The CSV format is not precisely defined.  Common usage allows
+allows the first row of data to be treated as a row of column labels
+(the "header row"), and also allows comment rows which start with a designated comment prefix character.
+Because the initial focus of the project was MCMC sampling, the CSV file allowed for a
+straightforward representation of the posterior sample one row per draw,
+one column per output from the Stan program.
+Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
+the algorithm state, and the algorithm outputs.
 
 ### Output mechanism:  callback writers
 
