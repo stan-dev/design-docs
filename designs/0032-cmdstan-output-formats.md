@@ -1,4 +1,4 @@
-- Feature Name: cmdstan-output-formats
+- Feature Name: stan-output-formats
 - Start Date: 2022-01-11
 - RFC PR:
 - Stan Issue:
@@ -7,33 +7,44 @@
 [summary]: #summary
 
 Provide alternatives to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
-for outputs of the Stan platform services methods supported by CmdStan.
+for outputs of the Stan inference algorithms which are exposed by the `stan::services` layer.
 
 # Motivation
 [motivation]: #motivation
 
-The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) is limited and limiting for several reasons.
+The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) contains a record
+of the inference algorithm outputs.
+A CSV file is designed to hold a single table's worth of data in plain text where
+each row of the file contains one row of table data, and all rows have the same number of fields.
+The CSV format is not precisely defined.  Common usage allows
+allows the first row of data to be treated as a row of column labels
+(the "header row"), and also allows comment rows which start with a designated comment prefix character.
 
-The CSV format itself is not fully standardized.
-The original intent of the format is to represent a table's worth of data in plain text.
-Each row of the file contains one row of table data, and all rows have the same number of fields.
-Over time, conventions have been adopted, notably use of row headers for column labels and comment rows.
+The CSV format was chosen as the output format early in the Stan project's history.
+At that time, the goal was to develop a better MCMC sampler and the CSV file allowed for a
+straightforward representation of the posterior sample one row per draw, one column per output from the Stan program.
+Over time, this file has come to be an amalgam of information about the inference engine configuration,
+the algorithm state, and the algorithm outputs.
+This format is limited and limiting for several reasons.
 
-The Stan CSV file, however, contains far more information than a single table's worth of data.
-To cram all the information from a CmdStan run we 
-abuse the CSV format by using blocks of comment lines to record additional information.
-The current Stan API requires the information in a comment line be assembled and flattened into a text string.
-Even when we can use a fast CSV parser to extract the CSV data, we still need to build ad-hoc parsers for the comment blocks
-to re-assemble the flattened information.
+* The HMC sampler uses comment rows following the header row to report the stepsize, metric type, and metric
+and a final set of comment rows to report sampler timing information.
+This requires writing ad-hoc parsers to recover this information and precludes the use of many fast CSV parser libraries.
 
-The sample methods produce the largest amount of output data and these are the most difficult to process quickly and efficiently.
-The first part of a CmdStan CSV file always a series of comment rows which contain configuration and version information,
-and this comment header continues to accumulate new bits of information about program version and compilation options.
-The NUTS-HMC methods output a series of comment lines which contain the stepsize and metric.
-The sample methods also record timing information at the end.
+* The Stan CSV file use a single table to hold both the inference algorithm state as well as
+the model estimates.  By convention, the initial columns contain inference algorithm state.
+Depending on the kind of inference there will be zero or more such columns whose names end in `__`, e.g. `lp__`.
 
-In order to monitor the progress of CmdStan's inference algorithms,
-the outputs from CmdStan must be available to downstream readers on a streaming basis.
+* For both MCMC and variational inference algorithms, the sampler state is only reported on a per-draw basis,
+precluding reporting of the inner workings of the algorithm, e.g., leapfrog steps, SGD.
+
+* Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files.
+It would be preferable to produce a single output file which provides per-draw chain ids.
+
+
+
+outputs from each draw or from each iteration of the algorighm must be 
+the per-draw outputs must be outputs from CmdStan must be available to downstream readers on a streaming basis.
 To facilitate monitoring different aspects of the algorithm, a more granular set of outputs,
 instead of a single CSV file would make this task easier.
 Another consideration is the use of multi-chain methods; currently multi-chain NUTS-HMC and in the future,
