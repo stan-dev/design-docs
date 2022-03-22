@@ -12,20 +12,16 @@ for outputs of the Stan inference algorithms which are exposed by the `stan::ser
 # Motivation
 [motivation]: #motivation
 
-The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) contains a record
-of the inference algorithm outputs.
-A CSV file is designed to hold a single table's worth of data in plain text where
-each row of the file contains one row of table data, and all rows have the same number of fields.
-The CSV format is not precisely defined.  Common usage allows
-allows the first row of data to be treated as a row of column labels
-(the "header row"), and also allows comment rows which start with a designated comment prefix character.
 
-Because the initial focus of the project was MCMC sampling, the CSV file allowed for a
-straightforward representation of the posterior sample one row per draw,
-one column per output from the Stan program.
-Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
-the algorithm state, and the algorithm outputs.
+The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) contains a record
+of the inference algorithm outputs.  This is the output format used by CmdStan, and therefore by the
+CmdStan wrapper interfaces CmdStanPy and CmdStanR.  
 This format is limited and limiting for several reasons.
+
+* While the plain-text format is human readable, the drawbacks are that conversion to/from binary
+is expensive and may lose precision, unless default settings are overridden, which in turn will
+result in large output file size.  The plain text format is untyped, therefore we cannot distinguish
+between integer, real, or complex numbers.
 
 * The HMC sampler uses comment rows following the header row to report the stepsize, metric type, and metric
 and a final set of comment rows to report sampler timing information.
@@ -42,9 +38,21 @@ of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 * Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
 with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
 
-To overcome these problems, we need to refactor and extend the core Stan classes which assemble and format program outputs,
-with the goal of providing an alternative to the monolithic CSV output file currently used by CmdStan and therefore by
-the wrapper interfaces CmdStanR and CmdStanPy.
+A CSV file is designed to hold a single table's worth of data in plain text where
+each row of the file contains one row of table data, and all rows have the same number of fields.
+The CSV format is not precisely defined.  Common usage allows
+allows the first row of data to be treated as a row of column labels
+(the "header row"), and also allows comment rows which start with a designated comment prefix character.
+Because the initial focus of the project was MCMC sampling, the CSV file allowed for a
+straightforward representation of the posterior sample one row per draw,
+one column per output from the Stan program.
+Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
+the algorithm state, and the algorithm outputs.
+
+To overcome these problems, we need to refactor and extend the core Stan output mechanisms
+so that so that the inference algorithm and Stan model outputs are factored into discrete units,
+using output formats which correspond to the structure of the information,
+as detailed in the following sections.
 
 
 # Guide-level explanation
@@ -56,11 +64,18 @@ and information structure.
 
 There are three sources of information:
 
-1. Stan program outputs: estimates for all model parameters, transformed parameters, and generated quantities.
+1. The Stan model, class  [``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp).
+The model class method `log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
+The model class method `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
+The method `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
+Finally, a number of methods provide information about the model itself:  `model_name`, `(un)constrained_param_names`, `get_dims`.
 
 2. Inference engine outputs: various diagnostics.
+The inference engine outputs are flattened into per-iteration reports.
 For the NUTS-HMC sampler, the current outputs are the stepsize and metric, and the per-iteration sampler variables (state).
+ADVI reports stepsize `eta` and per-iteration state, and 
 The optimization and variational algorithms also report on their respective iterations.
+
 
 3. Interface-level outputs:
    + model name, compile options, Stan compiler and (Cmd)Stan version and compile options.
