@@ -43,6 +43,18 @@ so that so that the inference algorithm and Stan model outputs are factored into
 using output formats which correspond to the structure of the information,
 as detailed in the following sections.
 
+For complicated models and/or inference algorithms, we wish to monitor progress of:
+
++ the joint model log probability "lp__"
++ the estimates of individual model variables on either the constrained or unconstrained scales (the latter only applied to parameters and transformed parameters).
++ the inference engine state.
+
+For downstream analysis we need to evaluate the goodness of fit as well 
+
++ model convergence - R-hat et al
++ effective sample size
++ statistics of all parameters and quantities of interest
++ correlation/covariance of the model parameters
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -57,7 +69,7 @@ There are three sources of information:  the Stan model, the inference algorithm
 **The Stan model**. The Stan services layer helper methods call the Stan model class
 [``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp).
 
-  +`log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
+  + `log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
   + `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
   + `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
   + a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
@@ -76,16 +88,6 @@ the initial set of comments in the Stan CSV file contain information about the C
    + process-level information:  chain, iteration.
    + timing information: timestamp information reported by processing events.
 
-We would like to be able to monitor and/or analyze:
-
-+ the joint model log probability "lp__"
-+ the estimates of individual model variables on either the constrained or unconstrained scales (the latter only applied to parameters and transformed parameters).
-+ the inference engine state.
-+ correlation/covariance of the model parameters
-+ model convergence - R-hat et al
-+ effective sample size
-
-For downstream analysis, we need to know the name, type, and structure of the Stan model variables.
 
 ## Current implementation
 
