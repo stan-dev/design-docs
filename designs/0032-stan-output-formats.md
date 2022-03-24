@@ -38,23 +38,17 @@ of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 * Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
 with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
 
-To overcome these problems, we need to refactor and extend the core Stan output mechanisms
-so that so that the inference algorithm and Stan model outputs are factored into discrete units,
-using output formats which correspond to the structure of the information,
+To overcome these problems, we need to refactor and extend the core Stan output mechanisms.
+For models which require extended processing we need to be able to monitor progress of both
+the resulting inferences and the internals of the inference algorithm.
+Examples of the former as the per-draw state of the joint model log probability ("lp__")
+as well as individual model variables.
+Examples of the latter are the algorithm state at each step of an interative process.
+For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
+and compute statistics for all model parameters and quantities of interest.
+Therefore we propose to factor the inference algorithm and Stan model outputs
+into a set of output streams using output formats which correspond to the structure of the information,
 as detailed in the following sections.
-
-For complicated models and/or inference algorithms, we wish to monitor progress of:
-
-+ the joint model log probability "lp__"
-+ the estimates of individual model variables on either the constrained or unconstrained scales (the latter only applied to parameters and transformed parameters).
-+ the inference engine state.
-
-For downstream analysis we need to evaluate the goodness of fit as well 
-
-+ model convergence - R-hat et al
-+ effective sample size
-+ statistics of all parameters and quantities of interest
-+ correlation/covariance of the model parameters
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
