@@ -54,20 +54,22 @@ and information structure.
 The structure of these outputs can be best represented either as table or as a nested list.
 There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
-The Stan model. The Stan services layer helper methods call the Stan model class
+**The Stan model**. The Stan services layer helper methods call the Stan model class
 [``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp).
+
   +`log_prob` provides access to the model parameters and transformed parameters on the unconstrained scale.
   + `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
   + `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
   + a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
 
-The Inference algorithm.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`
+**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`
 and comment blocks are used to report global information, e.g., stepsize and metric for NUTS-HMC and stepsize for ADVI.
 However for complex methods we wish to report on iterative or multi-stage algorithms, e.g., for the NUTS-HMC sampler,
 successive leapfrog steps.  Therefore we need to decouple the outputs from the inference engine from the outputs from the model.
 
-The inference run.  When CmdStan is used to do inference,
+**The inference run**.  When CmdStan is used to do inference,
 the initial set of comments in the Stan CSV file contain information about the CmdStan run.
+
    + model name, compile options, Stan compiler and (Cmd)Stan version and compile options.
    + inference algorithm, user-specified configuration options, and default config.
    + input and output data descriptors.
@@ -108,6 +110,9 @@ When the user sends a request to the interface to do some kind of inference give
 the interfaces first instantiate the Stan model object and the writer callbacks,
 then pass these in to `stan::services` functions which invoke the appropriate algorithm.
 The use of writer callbacks keeps the inference algorithms output-format agnostic.
+
+
+
 The current `stan::services` layer utilities are completely Stan CSV format-centric and will need to be refactored.
 
 
