@@ -200,7 +200,8 @@ to the correct writer.
 # Drawbacks
 [drawbacks]: #drawbacks
 
-This refactoring cleans up aspects of the Stan services layer at the cost of making the interfaces do more work.
+The more different kinds of output files, more effort required on the part of the user
+to configure and manage these outputs.
 
 
 # Rationale and alternatives
