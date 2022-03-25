@@ -97,11 +97,11 @@ Under this proposal, we would factor the information `output.csv` as follows:
 
 - Tabular data would be output either as CSV file format or Apache Arrow binary format:
 
- + `model_sample` - draws from the sampler on the constrained scale
- + `model_params_unconstrained` - draws on the unconstrained scale (parameter and transformed parameters only)
- + `log_prob` - the value of `lp__`
- + `sampler_state` - outputs from the sampler
- + `sampler_events` - timestamp plus string descriptor
+  + `model_sample` - draws from the sampler on the constrained scale
+  + `model_params_unconstrained` - draws on the unconstrained scale (parameter and transformed parameters only)
+  + `log_prob` - the value of `lp__`
+  + `sampler_state` - outputs from the sampler
+  + `sampler_events` - timestamp plus string descriptor
 
 
 ## Current implementation
