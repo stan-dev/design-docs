@@ -11,6 +11,7 @@ the outputs from CmdStan must be available to downstream readers on a streaming 
 This design provides an alternative to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
 for outputs of the Stan inference algorithms which are exposed by the `stan::services` layer.
 
+
 # Motivation
 [motivation]: #motivation
 
@@ -38,17 +39,21 @@ of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 * Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
 with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
 
-To overcome these problems, we need to refactor and extend the core Stan output mechanisms.
+To overcome these problems, we need to add new output mechanisms to core Stan.
 For models which require extended processing we need to be able to monitor progress of both
 the resulting inferences and the internals of the inference algorithm.
 Examples of the former as the per-draw state of the joint model log probability ("lp__")
 as well as individual model variables.
-Examples of the latter are the algorithm state at each step of an interative process.
+Examples of the latter are the algorithm state at each step of an interactive process.
 For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
 and compute statistics for all model parameters and quantities of interest.
-Therefore we propose to factor the inference algorithm and Stan model outputs
-into a set of output streams using output formats which correspond to the structure of the information,
-as detailed in the following sections.
+
+For backwards compatibility, we will maintain the current CmdStan Stan CSV output file format, as is.
+We propose to develop additional output handlers which produce multiple output streams,
+each reporting on one facet of the model-data-inference process.
+Given a designated directory, the output handler will create appropriately named output files in this directory.
+These streams will be in known, standard formats, allowing for easier downstream processing.
+
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
@@ -74,13 +79,29 @@ However for complex methods we wish to report on iterative or multi-stage algori
 successive leapfrog steps.  Therefore we need to decouple the outputs from the inference engine from the outputs from the model.
 
 **The inference run**.  When CmdStan is used to do inference,
-the initial set of comments in the Stan CSV file contain information about the CmdStan run.
+it uses the initial set of the comments in the Stan CSV file to record the complete set of configuration options
+and the final block of comments to record timing information.
+Not recorded explicitly are the chain and iteration information, when running multiple chains,
+or timestamp information for processing events.
 
-   + model name, compile options, Stan compiler and (Cmd)Stan version and compile options.
-   + inference algorithm, user-specified configuration options, and default config.
-   + input and output data descriptors.
-   + process-level information:  chain, iteration.
-   + timing information: timestamp information reported by processing events.
+For example, if we use the CmdStan interface to run the sampler for a single chain
+by default the output is written to a file `output.csv` and if we use the new `num_chains` argument,
+e.g., `num_chains=4` the output is a set of files `output_1.csv`, ..., `output_4.csv`.
+Under this proposal, we would factor the information `output.csv` as follows:
+
+- Structured non-tabular data (nested dictionaries and or/lists) would be output as JSON:
+
+  + `model_metatdata.json` - information on model variable names, types, dimensions, and block 
+  + `sampler_metatdata.json` - information on the configuration of the sampler
+  + `hmc_parameters.json` - information on the stepsize, metric type, and metric.
+
+- Tabular data would be output either as CSV file format or Apache Arrow binary format:
+
+ + `model_sample` - draws from the sampler on the constrained scale
+ + `model_params_unconstrained` - draws on the unconstrained scale (parameter and transformed parameters only)
+ + `log_prob` - the value of `lp__`
+ + `sampler_state` - outputs from the sampler
+ + `sampler_events` - timestamp plus string descriptor
 
 
 ## Current implementation
@@ -100,8 +121,21 @@ the algorithm state, and the algorithm outputs.
 
 Outputs are handled by objects of base class `stan::callbacks::writer`
 which is constructed from an output stream.
-Through function call operator overloading, the callback writer class
-methods provide the appropriate formatting for different kinds of data.
+Through function call operator overloading, the writer
+can handle the following data structures:
+
++ a vector of strings (names), used for CSV header row
++ a vector of doubles (data), used for (part of) the data row
++ a string (message), used for CSV comments
++ nothing - blank input
+
+The inference methods wrapped by the Stan serv methods on the Stan services layer 
+
+The Stan services layer provides a set of utility classes which manage one or more streams;
+these are 
+
+
+
 When the user sends a request to the interface to do some kind of inference given a model and data,
 the interfaces first instantiate the Stan model object and the writer callbacks,
 then pass these in to `stan::services` functions which invoke the appropriate algorithm.
@@ -231,6 +265,8 @@ of more, better, and faster downstream analyses.
 [prior-art]: #prior-art
 
 N/A (This is a refactor.  The existing system is the prior art.)
+
+For previous discussion on Discourse and a nascent proposal, see:  https://discourse.mc-stan.org/t/universal-static-logger-style-output/4851/21
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
