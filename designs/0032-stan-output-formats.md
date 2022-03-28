@@ -189,7 +189,8 @@ To save a record of the inference run, we wish to store this in a structured for
 allowing for lists, maps, and nested lists and maps.
 
 
-## Functional specification
+# Reference-level explanation
+[reference-level-explanation]: #reference-level-explanation
 
 We propose to break down the information from the Stan inference algorithms into a series of output streams
 where each stream handles one kind of information and whose format is appropriate for further procesing.
@@ -204,37 +205,43 @@ Tabular information includes:
 
 Structured information includes:
 
-- The HMC tuning parameters:  metric and stepsize.
-The HMC metric is a symmetric positive definite matrix, either a diagonal or a dense matrix.
-The former is reported as just the vector that is matrix diagonal, the latter is reported as the full matrix.
-The HMC stepsize is a scalar.
+- The HMC tuning parameters:  metric and stepsize.  The HMC metric is a symmetric positive definite matrix, either a diagonal or a dense matrix.
+The former is reported as just the vector that is matrix diagonal, the latter is reported as the full matrix.  The HMC stepsize is a scalar.
 
-- Stan model variables schema: block, name, type, shape, size, output column name(s)
+- Stan model variables schema: a list of all model variables including: block, name, type, shape, size, output column name(s)
 
-- Information about the inference engine run:  all information currently jammed into the Stan CSV file header
-and the closing timing comments.
+- Information about the inference run:  algorithm configuration, Stan version, model compiler version and compile options, and timing information.
 
-The user interfaces will manage creating and naming the suite of output files.
+## Implementation
 
-Examples go here.
+To improve and generalize the outputs and output formats, we propose to:
+
+- implement new classes which extend the `stan::callbacks::writer` base class in an algorithm-specific fashion
+and which will be passed in to the `stan::services` layer wrapper functions.
+Like the existing `stan::callbacks::unique_stream_writer`, the algorithm specific writers will
+manage multiple output streams.  This will 
+
+- decouple the output format from the writer through the use of formatter callbacks.
+For tabular data we will implement CSV and Apache Arrow formatters.
+For extra-tabular structured data we will implement a JSON formatter.
+
+For the HMC sampler algorithms we 
+propose to refactor the utility class `stan::servhices::utils::mcmc_writer`
+into a callback writer, i.e., `stan::callbacks::mcmc_writer`.
+The callback writer is supplied with a filesystem directory name and data formatters.
+The calling signatures for services layer wrapper functions to the HMC sampler will take a single
+`stan::callbacks::mcmc_writer` argument, instead of two `stan::callbacks::writer` arguments.
+The `stan::callbacks::mcmc_writer` class will include the same set of methods as are currently
+implemented on the `stan::services::utils::mcmc_writer` class.
+For the optimization algorithms, we would need to introduce an `optimization_writer`,
+likewise for ADVI, we would introduce an `advi_writer`.
+
+The CSV structured data formatter corresponds pretty directly to the current set of methods
+on the base callbacks writer class.
+The JSON and Apache Arrow formatters would need to be able to handle lists and dictionaries, for the former,
+and scalar and vectors of ints and doubles for the latter.
 
 
-
-# Reference-level explanation
-[reference-level-explanation]: #reference-level-explanation
-
-- limited number of output streams is problematic - instead of passing around per-stream callback writers,
-we pass around a writer which manages multiple streams and which extends the writer interface in algorithm-specific ways.
-
-
-- aggregating all information into a single row's worth of data makes code more difficult to modify.
-
-
-The callback writer is a good design but the `mcmc_writer` class needs to be refactored.
-Multiple output files require one callback writer per file.
-These writers are managed by a composite object which manages a set of callback writer objects
-and defines the appropriate set of output methods needed to dispatch information
-to the correct writer.
 
 # Drawbacks
 [drawbacks]: #drawbacks
