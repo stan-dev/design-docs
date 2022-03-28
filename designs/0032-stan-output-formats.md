@@ -243,11 +243,9 @@ implemented on the `stan::services::utils::mcmc_writer` class.
 For the optimization algorithms, we would need to introduce an `optimization_writer`,
 likewise for ADVI, we would introduce an `advi_writer`.
 
-The CSV structured data formatter corresponds pretty directly to the current set of methods
-on the base callbacks writer class.
+The CSV structured data formatter corresponds to the current set of methods on the base callbacks writer class.
 The JSON and Apache Arrow formatters would need to be able to handle lists and dictionaries, for the former,
 and scalar and vectors of ints and doubles for the latter.
-
 
 
 # Drawbacks
@@ -262,28 +260,28 @@ to configure and manage these outputs.
 
 - Why is this design the best in the space of possible designs?
 
-This refactoring is in line with the original design.
+The proposed refactoring uses the writer callbacks and extends them.
 
 - What other designs have been considered and what is the rationale for not choosing them?
 
-For the output formats, we considered using Google's protocol buffers.
-These offer data compression, but would require us to develop a set of schemas
-for all outputs.
-Furthermore, protocol buffers are a Google library with no guarantee of backwards compatibility,
-
+For the output formats, we considered using Google's protocol buffers.CmdStan output have
+This is a Google library which has been open-source since 2008.
+They provide good data compression and fast transport.
+However, the compressed format requires schemas used for serialization and deserialization.
+From the perspective of downstream processing applications, Apache Arrow files are easier to work with,
+as the schema is sent as the first part of the file.
+While Apache Arrow files are larger, they are still far smaller than regular text files.
 
 - What is the impact of not doing this?
 
-All the interfaces and downstream consumers of Stan output have
-to implement ad-hoc parsers to deal with the multiplicity of information
-in a Stan CSV file.
+Continuing to use the Stan CSV file format means that 
+downstream consumers of these files must to implement ad-hoc parsers
+and corresponding data structures to deal with the multiple kinds of data in a Stan CSV file.
 Providing appropriately structured outputs facilitates development
 of more, better, and faster downstream analyses.
 
 # Prior art
 [prior-art]: #prior-art
-
-N/A (This is a refactor.  The existing system is the prior art.)
 
 For previous discussion on Discourse and a nascent proposal, see:  https://discourse.mc-stan.org/t/universal-static-logger-style-output/4851/21
 
@@ -292,15 +290,16 @@ For previous discussion on Discourse and a nascent proposal, see:  https://disco
 
 - What parts of the design do you expect to resolve through the RFC process before this gets merged?
 
-Agreement on division of sampler / model outputs in separate but parallel CSV files.
+  + Which information should be recorded as metadata.
 
 - What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
 
-Use of Apache Arrow/Parquet formats as alternatives for tabular data.
+  + Appropriate C++ data structures needed to create JSON objects
+  + Creating Apache Arrow schemas for inference algorithm and Stan model data.
 
 - What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
 
-Input readers and converters between data formats.
+  + Input readers and converters between data formats.
 
 
 
