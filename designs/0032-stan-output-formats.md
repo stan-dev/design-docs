@@ -234,11 +234,11 @@ For extra-tabular structured data we will implement a JSON formatter.
 
 For the HMC sampler algorithms we 
 propose to refactor the utility class `stan::servhices::utils::mcmc_writer`
-into a callback writer, i.e., `stan::callbacks::mcmc_writer`.
+into a callback writer, i.e., `stan::callbacks::hmc_writer`.
 The callback writer is supplied with a filesystem directory name and data formatters.
 The calling signatures for services layer wrapper functions to the HMC sampler will take a single
-`stan::callbacks::mcmc_writer` argument, instead of two `stan::callbacks::writer` arguments.
-The `stan::callbacks::mcmc_writer` class will include the same set of methods as are currently
+`stan::callbacks::hmc_writer` argument, instead of two `stan::callbacks::writer` arguments.
+The `stan::callbacks::hmc_writer` class will include the same set of methods as are currently
 implemented on the `stan::services::utils::mcmc_writer` class.
 For the optimization algorithms, we would need to introduce an `optimization_writer`,
 likewise for ADVI, we would introduce an `advi_writer`.
