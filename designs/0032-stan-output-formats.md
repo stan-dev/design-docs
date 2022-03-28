@@ -8,8 +8,13 @@
 
 In order to monitor the progress of CmdStan's inference algorithms,
 the outputs from CmdStan must be available to downstream readers on a streaming basis.
-This design provides an alternative to the [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
-for outputs of the Stan inference algorithms which are exposed by the `stan::services` layer.
+This design provides an alternative to the use of a single
+[Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
+in which information about the algorithm state and model estimates
+are combined into a single data table, plus unstructured comment strings.
+We propose to use a single output directory instead, which will contain multiple
+files, each of which contains a single kind of information in a type-appropriate
+format, supported by commonly used processing libraries.
 
 
 # Motivation
@@ -42,7 +47,9 @@ The optimization algorithms don't report any state information beyond `lp__`.
 of the inference algorithm, e.g., leapfrog steps or gradient trajectories.
 
 * Although we can now run multiple chains in a single process, it is still necessary to produce per-chain CSV files,
-with the chain id baked into the filename.   A cleaner solution would be to combine all outputs in a single file.
+with the chain id baked into the filename.   An alternative solution would be to combine all outputs in a single file,
+adding a column for chain-id but the downside to this would be that having multiple chains write to a single output file
+increases the code complexity.
 
 * Currently, the HMC sampler can also be configured to produce a [diagnostic_file](https://mc-stan.org/docs/2_29/cmdstan-guide/mcmc-config.html#sampler-diag-file)
 which contains the per-iteration latent Hamiltonian dynamics of all model parameters,
@@ -193,7 +200,7 @@ allowing for lists, maps, and nested lists and maps.
 [reference-level-explanation]: #reference-level-explanation
 
 We propose to break down the information from the Stan inference algorithms into a series of output streams
-where each stream handles one kind of information and whose format is appropriate for further procesing.
+where each stream handles one kind of information and whose format is appropriate for further processing.
 Tabular data will be output either in CSV format (human readable) or using the Apache Arrow binary formats.
 For hierarchical data we will use JSON format.
 
