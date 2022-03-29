@@ -293,7 +293,9 @@ Furthermore, adding Apache Arrow libraries complicates the build process.
 
 - Why is this design the best in the space of possible designs?
 
-The proposed refactoring uses the writer callbacks and extends them.
+This is the result of discussions with core Stan developers.  The design refactors
+and standardizes output for the support inference algorithms, building on the core
+mechanisms:  callback writers and the methods on the Stan model class.
 
 - What other designs have been considered and what is the rationale for not choosing them?
 
