@@ -223,25 +223,13 @@ The former is reported as just the vector that is matrix diagonal, the latter is
 
 To improve and generalize the outputs and output formats, we propose to:
 
-- implement new classes which extend the `stan::callbacks::writer` base class in an algorithm-specific fashion
-and which will be passed in to the `stan::services` layer wrapper functions.
-Like the existing `stan::callbacks::unique_stream_writer`, the algorithm specific writers will
-manage multiple output streams.  This will 
+- implement a new set of algorithm-specific output handlers which
+will be passed in to the `stan::services` layer wrapper function and which
+will manage the necessary callback writer objects.
 
 - decouple the output format from the writer through the use of formatter callbacks.
 For tabular data we will implement CSV and Apache Arrow formatters.
 For extra-tabular structured data we will implement a JSON formatter.
-
-For the HMC sampler algorithms we 
-propose to refactor the utility class `stan::servhices::utils::mcmc_writer`
-into a callback writer, i.e., `stan::callbacks::hmc_writer`.
-The callback writer is supplied with a filesystem directory name and data formatters.
-The calling signatures for services layer wrapper functions to the HMC sampler will take a single
-`stan::callbacks::hmc_writer` argument, instead of two `stan::callbacks::writer` arguments.
-The `stan::callbacks::hmc_writer` class will include the same set of methods as are currently
-implemented on the `stan::services::utils::mcmc_writer` class.
-For the optimization algorithms, we would need to introduce an `optimization_writer`,
-likewise for ADVI, we would introduce an `advi_writer`.
 
 The CSV structured data formatter corresponds to the current set of methods on the base callbacks writer class.
 The JSON and Apache Arrow formatters would need to be able to handle lists and dictionaries, for the former,
