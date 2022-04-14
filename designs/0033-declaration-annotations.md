@@ -107,8 +107,9 @@ and efficiency considerations)
   variable to be placed in GPU memory and optimized for GPU computation.
 - `@const` - When placed on a variable, indicate that it will not be edited and
   is a candidate for Struct-of-Array optimizations.
-- `@silent` - Can be placed on a variable to prevent it from being in the output
-  of the Stan sampler.
+- `@likely` and `@unlikely` - When placed on an integer which is used as the
+  test of a conditional, these annotations directly translate to the `likely`
+  and `unlikely` markings in the generated C++.
 - `@extern` - When placed on a function declaration, mark it as not needed a
   definition in the program. This is equivalent to a more targeted version of
   the `--allow-undefined` flag available for stanc3.
@@ -190,6 +191,15 @@ compound annotation, so rather than `@static @gpu matrix ...` it would simply be
 There is no true alternative which solves the same problem to this level of
 generality. Individual examples of it's use all have alternatives, but they
 usually require much tighter coupling with the core language.
+
+
+## Static or const as a part of the core language
+
+Specifically the concept referred to above as `@static` would be more powerful
+if it was implemented as part of the core language in such a way that allowed it
+to be enforced by the typechecker. This could be pursued in conjunction with the
+annotation framework, but would be a keyword modifier instead.
+
 
 # Prior art
 [prior-art]: #prior-art
