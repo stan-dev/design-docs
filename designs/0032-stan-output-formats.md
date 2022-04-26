@@ -128,8 +128,7 @@ For the sake of example we propose the following names:
   + `algorithm_state` - the per-iteration state of the inference algorithm, e.g. `accept_stat__`, `log_p__`. 
   + `algorithm_internal_state` - this would allow for finer-grained reporting of the inference engine state for development, testing, and debugging purposes.
 
-If we adjoin all the columns in tables `log_prob`, `algorithm_iter_state`, and `model_sample`, the resulting data table would contain the equivalent information
-in the current Stan CSV file, but critically, not the comment blocks, which would break existing ad-hoc parsers,
+If we adjoin all the columns in tables `log_prob`, `algorithm_iter_state`, and `model_sample`, the resulting data table would contain the equivalent information in the current Stan CSV file, but critically, not the comment blocks, which would break existing ad-hoc parsers,
 e.g., CmdStanPy's `from_csv` method.
 
 Information which is naturally structured as dictionaries, lists, possibly nested, would be output as JSON:
@@ -151,6 +150,25 @@ would result in the following output files:
 -  `model_metdata_1.json` .... `model_metadata_4.json`
 -  `config_1.json` .... `config_4.json`
 -  `timestamps_1.json` .... `timestamps_4.json`
+
+Downstream clients can use the appropriate Apache Arrow interface to stream the parquet files.
+An Apache Arrow parquet file consists of an schema followed by one or more rows of data.
+The schema describes the structure of the data objects in each row, allowing the downstream
+process to reconstitute structured objects properly.
+The Arrow libraries can be used to monitor the outputs to a file on a streaming basis.
+
+
+############## Bob comments
+algorithm config: one-time, hierarchical
+initialization: one-time, tabular
+sample & algorithm diagnostics: streaming, tabular
+metric & step size: one-time, tabular
+timing information: one-time, hierarchical
+These distinctions are not well supported at either the stan services layer because the output streams are overloaded and have no hierarchical structure, and they're not well supported at the cmdstan layer because everything gets packed into one CSV file with non-standard encodings through comments.
+
+In my own uses of CmdStan, I would take the CSV files and try to read them into R in order to do plotting or to compare adaptations from different runs. I would also read them into C++ through stansummary to print posterior summaries. The non-standard format in the CSV output makes this challenging. I see this design as making this process easier for workaday CmdStan users as well as for the CmdStan developers. I think particularly for what I'm calling hierarchical outputs, it'd be more natural to output them in their own JSON files, which are both human and machine readable. They're even easier on humans because you don't have to fish the relevant example out of CSV comments. If you really want a single file for output, zip it.
+############## Bob comments
+
 
 
 ## Current implementation and proposed changes
@@ -274,6 +292,20 @@ We propose to output this information as a single JSON object,
 allowing for a set of key-value pairs, mapping strings to values,
 either a scalar, list, or dictionary object.
 
+# Scope of changes
+[scope]: #scope
+
+The changes in this proposal will directly functions in `stan-dev/stan` at the `stan::services` layer.
+
+Keeping the existing `stan::services` layer method signatures will avoid the need for changes to CmdStan.
+
+The input formats used by the inference algorithms are:
+
+- data variable definitions in JSON or [rdump](https://mc-stan.org/docs/cmdstan-guide/rdump.html)
+- initial parameter variables in JSON or rdump
+- for the standalone generated quantities, inputs include the Stan CSV file which contains the a sample from the fitted model.
+
+The Stan CSV output format will continue to be used for CmdStan outputs. in addition to the new output formats discussed above.
 
 
 # Drawbacks
