@@ -64,18 +64,23 @@ which contains the per-iteration latent Hamiltonian dynamics of all model parame
 as described here:  https://discourse.mc-stan.org/t/sampler-hmc-diagnostics-file/15386;
 the optimization algorithms only provide a single slot.
 
-To overcome these problems, we need to redesign the the output API used within `stan::services`
-in order to develop additional output handlers, while still allowing for use of the
-current output formats for backwards compatibility.
+# Functional Specification
+[functional-spec]: #functional-spec
+
 We propose to develop output handler objects which can manage a set of output streams,
 each  of which reports on one facet of the model-data-inference process.
-Given a designated directory, the output handler will create appropriately named output files in this directory.
+We will add new signatures to the `stan::services` layer to pass these output handlers
+to the inference algorithms, replacing the current slots for writer callbacks with
+a single slot for the output handler.
+This will allow for new output handlers, while still allowing for use of the
+current output formats for backwards compatibility.
 
+Given a designated directory, the output handler will create appropriately named output files in this directory.
 The outputs will be in known, standard formats, allowing for easier downstream processing.
-We will continue to use CSV files to store tabular data in human-readable format
-and we will introduce the use of Apache Arrow as an alternative binary file format.
+Tabular data will be either in CSV file format or Apache Arrow format.
 Data currently output as string comments in the CSV files will be structured into JSON,
 using dictionaries, lists and nested combinations thereof.
+Output handlers can be subclassed to handle the different inference algorithm outputs.
 
 This richer set of outputs will make it easier to develop tools which can do online monitoring
 of the inference engine run as well as post-process analysis of the program and model outputs.
@@ -84,13 +89,9 @@ the algorithm state, and individual variable estimates.
 For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
 and compute statistics for all model parameters and quantities of interest.
 
-# Guide-level explanation
-[guide-level-explanation]: #guide-level-explanation
-
 For a given run of an inference algorithm with a specific model and dataset,
 the outputs of interest can be classified in terms of information source and content
 and information structure.
-
 The structure of these outputs can be best represented either as table or as a nested list.
 There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
