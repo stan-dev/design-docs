@@ -14,23 +14,33 @@ We propose to replace the single output file with an  output directory.
 This will result in a clean separation of different kinds of information
 into type-appropriate, commonly used formats and will make it easier to
 do downstream analysis.
+JSON format will be used for hierarchical and extra-tabular data structures.
+For tabular data, we will continue to use CSV formats for human-readable outputs
+as well as introduce binary formats for tabular data.
+If a single output file is required, the entire directory can be stored as a zip archi
+This design will make the downstream analysis process easier for workaday
+CmdStan users as well as for the CmdStan developers.
 
 
 # Motivation
 [motivation]: #motivation
 
-The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) contains a record
-of the inference algorithm outputs.  This is the output format used by CmdStan, and therefore by the
-CmdStan wrapper interfaces CmdStanPy and CmdStanR.  This format is limited and limiting for several reasons.
+A [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) is the output format
+used by CmdStan, and therefore by CmdStanPy and CmdStanR, which contains a record of the inference run and
+all resulting diagnostics and estimates.
+These files are use for downstream analysis and visualization.
+This format is limited and limiting for several reasons.
+
+* Because the Stan CSV file format is a non-standard format, downstream analysis packages need
+to develop specialized parsers to extract and manage a set of outputs.
+For example, the HMC sampler uses comment rows following the header row to report the stepsize, metric type, and metric
+and a final set of comment rows to report sampler timing information.
+This requires writing ad-hoc parsers to recover this information and precludes the use of many fast CSV parser libraries.
 
 * While the plain-text format is human readable, the drawbacks are that conversion to/from binary
 is expensive and may lose precision, unless default settings are overridden, which in turn will
 result in large output file size.  The plain text format is untyped, therefore we cannot distinguish
 between integer, real, or complex numbers.
-
-* The HMC sampler uses comment rows following the header row to report the stepsize, metric type, and metric
-and a final set of comment rows to report sampler timing information.
-This requires writing ad-hoc parsers to recover this information and precludes the use of many fast CSV parser libraries.
 
 * The Stan CSV file must necessarily use a single table to hold both the inference algorithm state as well as
 the model outputs produced by the model class's `write_array` method for each iteration of the inference algorithm.
@@ -64,11 +74,6 @@ which contains the per-iteration latent Hamiltonian dynamics of all model parame
 as described here:  https://discourse.mc-stan.org/t/sampler-hmc-diagnostics-file/15386;
 the optimization algorithms only provide a single slot.
 
-############## Bob comments
-
-In my own uses of CmdStan, I would take the CSV files and try to read them into R in order to do plotting or to compare adaptations from different runs. I would also read them into C++ through stansummary to print posterior summaries. The non-standard format in the CSV output makes this challenging. I see this design as making this process easier for workaday CmdStan users as well as for the CmdStan developers. I think particularly for what I'm calling hierarchical outputs, it'd be more natural to output them in their own JSON files, which are both human and machine readable. They're even easier on humans because you don't have to fish the relevant example out of CSV comments. If you really want a single file for output, zip it.
-############## Bob comments
-
 
 ## Current implementation and proposed changes
 
@@ -89,48 +94,6 @@ We propose to break down the information from the Stan inference algorithms into
 where each file contains one kind of information.
 Tabular data will be output either in CSV format (human readable) or using the Apache Arrow binary formats.
 For hierarchical data we will use JSON format.
-
-Tabular information includes:
-
-- The output from the Stan model class `write_array` function: the computed values for all Stan model variables on the constrained scale.
-- The Stan model parameter variables on the unconstrained scale returned by the `log_prob` function.
-- The inference algorithm state at each step of the iterative algorithm.
-
-Structured information includes:
-
-- The HMC tuning parameters:  metric and stepsize.  The HMC metric is a symmetric positive definite matrix, either a diagonal or a dense matrix.
-The former is reported as just the vector that is matrix diagonal, the latter is reported as the full matrix.  The HMC stepsize is a scalar.
-
-- Stan model variables schema: a list of all model variables including: block, name, type, shape, size, output column name(s)
-
-- Information about the inference run:  algorithm configuration, Stan version, model compiler version and compile options, and timing information.
-
-
-
-# Functional Specification
-[functional-spec]: #functional-spec
-
-We propose to develop output handler objects which can manage a set of output streams,
-each  of which reports on one facet of the model-data-inference process.
-We will add new signatures to the `stan::services` layer to pass these output handlers
-to the inference algorithms, replacing the current slots for writer callbacks with
-a single slot for the output handler.
-This will allow for new output handlers, while still allowing for use of the
-current output formats for backwards compatibility.
-
-Given a designated directory, the output handler will create appropriately named output files in this directory.
-The outputs will be in known, standard formats, allowing for easier downstream processing.
-Tabular data will be either in CSV file format or Apache Arrow format.
-Data currently output as string comments in the CSV files will be structured into JSON,
-using dictionaries, lists and nested combinations thereof.
-Output handlers can be subclassed to handle the different inference algorithm outputs.
-
-This richer set of outputs will make it easier to develop tools which can do online monitoring
-of the inference engine run as well as post-process analysis of the program and model outputs.
-Examples of the former as the per-draw state of the joint model log probability ("lp__"),
-the algorithm state, and individual variable estimates.
-For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
-and compute statistics for all model parameters and quantities of interest.
 
 For a given run of an inference algorithm with a specific model and dataset,
 the outputs of interest can be classified in terms of information source and content
@@ -179,8 +142,34 @@ yielding the following:
 - metric & step size: one-time, tabular
 - timing information: one-time, hierarchical
 
-These distinctions are not well supported at either the stan services layer because the output streams are overloaded and have no hierarchical structure, and they're not well supported at the cmdstan layer because everything gets packed into one CSV file with non-standard encodings through comments.
-To address this, the Stan CSV output and diganostic files will be refactored into a series of tables.
+These distinctions are not well supported at either the stan services layer because
+the output streams are overloaded and have no hierarchical structure.
+Nor are they supported at the cmdstan layer, because everything gets packed
+into one CSV file with non-standard encodings through comments.
+To address this, the Stan CSV output and diagnostic files will be refactored into a series of tables.
+
+We propose to develop output handler objects which can manage a set of output streams,
+each  of which reports on one facet of the model-data-inference process.
+We will add new signatures to the `stan::services` layer to pass these output handlers
+to the inference algorithms, replacing the current slots for writer callbacks with
+a single slot for the output handler.
+This will allow for new output handlers, while still allowing for use of the
+current output formats for backwards compatibility.
+
+Given a designated directory, the output handler will create appropriately named output files in this directory.
+The outputs will be in known, standard formats, allowing for easier downstream processing.
+Tabular data will be either in CSV file format or Apache Arrow format.
+Data currently output as string comments in the CSV files will be structured into JSON,
+using dictionaries, lists and nested combinations thereof.
+Output handlers can be subclassed to handle the different inference algorithm outputs.
+
+This richer set of outputs will make it easier to develop tools which can do online monitoring
+of the inference engine run as well as post-process analysis of the program and model outputs.
+Examples of the former as the per-draw state of the joint model log probability ("lp__"),
+the algorithm state, and individual variable estimates.
+For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
+and compute statistics for all model parameters and quantities of interest.
+
 For the sake of example we propose the following names:
 
   + `sample` - the model estimates on the constrained scale; 1 column per variable (element), one row per iteration.
@@ -217,9 +206,6 @@ An Apache Arrow parquet file consists of an schema followed by one or more rows 
 The schema describes the structure of the data objects in each row, allowing the downstream
 process to reconstitute structured objects properly.
 The Arrow libraries can be used to monitor the outputs to a file on a streaming basis.
-
-
-
 
 ### Output mechanism:  callback writers and output handlers
 
