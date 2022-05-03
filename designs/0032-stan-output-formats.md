@@ -3,7 +3,7 @@
 - RFC PR:
 - Stan Issue:
 
-# Summary
+## Summary
 [summary]: #summary
 
 This design provides an alternative to the use of a single
@@ -16,7 +16,7 @@ into type-appropriate, commonly used formats and will make it easier to
 do downstream analysis.
 
 
-# Motivation
+## Motivation
 [motivation]: #motivation
 
 A [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html) is the output format
@@ -267,7 +267,7 @@ We propose to output this information as a single JSON object,
 allowing for a set of key-value pairs, mapping strings to values,
 either a scalar, list, or dictionary object.
 
-# Scope of changes
+## Scope of changes
 [scope]: #scope
 
 The changes in this proposal will directly functions in `stan-dev/stan` at the `stan::services` layer.
@@ -283,7 +283,7 @@ The input formats used by the inference algorithms are:
 The Stan CSV output format will continue to be used for CmdStan outputs. in addition to the new output formats discussed above.
 
 
-# Drawbacks
+## Drawbacks
 [drawbacks]: #drawbacks
 
 Implementing and testing the output handlers and formatters is a non-trivial effort,
@@ -293,7 +293,7 @@ into an Arrow schema at the start of processing.
 Furthermore, adding Apache Arrow libraries complicates the build process.
 
 
-# Rationale and alternatives
+## Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
 - Why is this design the best in the space of possible designs?
@@ -322,17 +322,13 @@ and corresponding data structures to deal with the multiple kinds of data in a S
 Providing appropriately structured outputs facilitates development
 of more, better, and faster downstream analyses.
 
-# Prior art
+## Prior art
 [prior-art]: #prior-art
 
 For previous discussion on Discourse and a nascent proposal, see:  https://discourse.mc-stan.org/t/universal-static-logger-style-output/4851/21
 
-# Unresolved questions
+## Unresolved questions
 [unresolved-questions]: #unresolved-questions
-
-- What parts of the design do you expect to resolve through the RFC process before this gets merged?
-
-  + Which information should be recorded as metadata.
 
 - What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
 
