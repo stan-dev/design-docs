@@ -64,6 +64,49 @@ which contains the per-iteration latent Hamiltonian dynamics of all model parame
 as described here:  https://discourse.mc-stan.org/t/sampler-hmc-diagnostics-file/15386;
 the optimization algorithms only provide a single slot.
 
+############## Bob comments
+
+In my own uses of CmdStan, I would take the CSV files and try to read them into R in order to do plotting or to compare adaptations from different runs. I would also read them into C++ through stansummary to print posterior summaries. The non-standard format in the CSV output makes this challenging. I see this design as making this process easier for workaday CmdStan users as well as for the CmdStan developers. I think particularly for what I'm calling hierarchical outputs, it'd be more natural to output them in their own JSON files, which are both human and machine readable. They're even easier on humans because you don't have to fish the relevant example out of CSV comments. If you really want a single file for output, zip it.
+############## Bob comments
+
+
+## Current implementation and proposed changes
+
+A CSV file is designed to hold a single table's worth of data in plain text where
+each row of the file contains one row of table data, and all rows have the same number of fields.
+The CSV format is not precisely defined, but almost all modern CSV parsers 
+allow for the first row of data to be treated as a row of column labels
+(the "header row") and also allows comment rows which start with a designated comment prefix character.
+Because the initial focus of the Stan project was to do MCMC sampling, the CSV file allowed for a
+straightforward representation of the posterior sample one row per draw,
+one column per output from the Stan program.
+Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
+the algorithm state, and the algorithm outputs.
+The formats of the per-inference algorithm outputs are described in the
+[appendix of the CmdStan User's Guide](https://mc-stan.org/docs/2_29/cmdstan-guide/stan_csv.html)
+
+We propose to break down the information from the Stan inference algorithms into multiple output files
+where each file contains one kind of information.
+Tabular data will be output either in CSV format (human readable) or using the Apache Arrow binary formats.
+For hierarchical data we will use JSON format.
+
+Tabular information includes:
+
+- The output from the Stan model class `write_array` function: the computed values for all Stan model variables on the constrained scale.
+- The Stan model parameter variables on the unconstrained scale returned by the `log_prob` function.
+- The inference algorithm state at each step of the iterative algorithm.
+
+Structured information includes:
+
+- The HMC tuning parameters:  metric and stepsize.  The HMC metric is a symmetric positive definite matrix, either a diagonal or a dense matrix.
+The former is reported as just the vector that is matrix diagonal, the latter is reported as the full matrix.  The HMC stepsize is a scalar.
+
+- Stan model variables schema: a list of all model variables including: block, name, type, shape, size, output column name(s)
+
+- Information about the inference run:  algorithm configuration, Stan version, model compiler version and compile options, and timing information.
+
+
+
 # Functional Specification
 [functional-spec]: #functional-spec
 
@@ -92,7 +135,11 @@ and compute statistics for all model parameters and quantities of interest.
 For a given run of an inference algorithm with a specific model and dataset,
 the outputs of interest can be classified in terms of information source and content
 and information structure.
-The structure of these outputs can be best represented either as table or as a nested list.
+The structure of these outputs can be best represented either as table or as a named list of heterogenous elements.
+A cross-cutting classification is whether or not the outputs are one-time outputs or streaming.
+The header row and comment sections of the Stan CSV file are generated once during the inference run.
+The CSV data rows are produced on a streaming basis.
+
 There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
 **The Stan model**. The Stan services layer methods call the following functions on the Stan model class
@@ -100,15 +147,19 @@ There are three sources of information:  the Stan model, the inference algorithm
 
 + `log_prob` returns the unnormalized target density and its gradient given the unconstrained model parameters,
 thus providing access to the model parameters and transformed parameters on the unconstrained scale.
+This is called any number of times during inference, depending on the algorithm.
 
 + `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
-
-+ `transform_inits` can be used to transform parameters from the constrained to the unconstrained scale.
+Each call produces one row's worth of data, which is streamed to the CSV file.
 
 + a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
+These are used to create the CSV header row, i.e., they need only be called once per inference run.
 
-**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`
-and comment blocks are used to report global information, e.g., stepsize and metric for NUTS-HMC and stepsize for ADVI.
+**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`.
+These are combined with the outputs from the call to `write_array` to produce a single row's worth of CSV data, which is
+streamed to the output file.
+Other information from the inference algorithm is produced once per run and is reported via comment blocks.
+This includes stepsize and metric for NUTS-HMC and stepsize for ADVI.
 The current format doesn't allow for fuller reporting of per-iteration computation, e.g., for the NUTS-HMC sampler,
 successive leapfrog steps.  Therefore we need to decouple the outputs from the inference engine from the outputs from the model.
 
@@ -118,8 +169,18 @@ and the final block of comments to record timing information.
 Not recorded explicitly are the chain and iteration information, when running multiple chains,
 or timestamp information for processing events.
 
-The structure of this information can be categorized as either tabular data or extra-tabular structured data.
-The header and data rows of the Stan CSV output and diagnostic files can be broken down into several different tables.
+The structure of this information can be categorized in two ways:
+one-time vs streaming and tabular data or extra-tabular structured data,
+yielding the following:
+
+- algorithm config: one-time, hierarchical
+- initialization: one-time, tabular
+- sample & algorithm diagnostics: streaming, tabular
+- metric & step size: one-time, tabular
+- timing information: one-time, hierarchical
+
+These distinctions are not well supported at either the stan services layer because the output streams are overloaded and have no hierarchical structure, and they're not well supported at the cmdstan layer because everything gets packed into one CSV file with non-standard encodings through comments.
+To address this, the Stan CSV output and diganostic files will be refactored into a series of tables.
 For the sake of example we propose the following names:
 
   + `sample` - the model estimates on the constrained scale; 1 column per variable (element), one row per iteration.
@@ -158,54 +219,7 @@ process to reconstitute structured objects properly.
 The Arrow libraries can be used to monitor the outputs to a file on a streaming basis.
 
 
-############## Bob comments
-algorithm config: one-time, hierarchical
-initialization: one-time, tabular
-sample & algorithm diagnostics: streaming, tabular
-metric & step size: one-time, tabular
-timing information: one-time, hierarchical
-These distinctions are not well supported at either the stan services layer because the output streams are overloaded and have no hierarchical structure, and they're not well supported at the cmdstan layer because everything gets packed into one CSV file with non-standard encodings through comments.
 
-In my own uses of CmdStan, I would take the CSV files and try to read them into R in order to do plotting or to compare adaptations from different runs. I would also read them into C++ through stansummary to print posterior summaries. The non-standard format in the CSV output makes this challenging. I see this design as making this process easier for workaday CmdStan users as well as for the CmdStan developers. I think particularly for what I'm calling hierarchical outputs, it'd be more natural to output them in their own JSON files, which are both human and machine readable. They're even easier on humans because you don't have to fish the relevant example out of CSV comments. If you really want a single file for output, zip it.
-############## Bob comments
-
-
-
-## Current implementation and proposed changes
-
-A CSV file is designed to hold a single table's worth of data in plain text where
-each row of the file contains one row of table data, and all rows have the same number of fields.
-The CSV format is not precisely defined, but almost all modern CSV parsers 
-allow for the first row of data to be treated as a row of column labels
-(the "header row") and also allows comment rows which start with a designated comment prefix character.
-Because the initial focus of the Stan project was to do MCMC sampling, the CSV file allowed for a
-straightforward representation of the posterior sample one row per draw,
-one column per output from the Stan program.
-Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
-the algorithm state, and the algorithm outputs.
-The formats of the per-inference algorithm outputs are described in the
-[appendix of the CmdStan User's Guide](https://mc-stan.org/docs/2_29/cmdstan-guide/stan_csv.html)
-
-We propose to break down the information from the Stan inference algorithms into multiple output files
-where each file contains one kind of information.
-Tabular data will be output either in CSV format (human readable) or using the Apache Arrow binary formats.
-For hierarchical data we will use JSON format.
-
-
-Tabular information includes:
-
-- The output from the Stan model class `write_array` function: the computed values for all Stan model variables on the constrained scale.
-- The Stan model parameter variables on the unconstrained scale returned by the `log_prob` function.
-- The inference algorithm state at each step of the iterative algorithm.
-
-Structured information includes:
-
-- The HMC tuning parameters:  metric and stepsize.  The HMC metric is a symmetric positive definite matrix, either a diagonal or a dense matrix.
-The former is reported as just the vector that is matrix diagonal, the latter is reported as the full matrix.  The HMC stepsize is a scalar.
-
-- Stan model variables schema: a list of all model variables including: block, name, type, shape, size, output column name(s)
-
-- Information about the inference run:  algorithm configuration, Stan version, model compiler version and compile options, and timing information.
 
 ### Output mechanism:  callback writers and output handlers
 
