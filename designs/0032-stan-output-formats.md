@@ -286,9 +286,6 @@ The Stan CSV output format will continue to be used for CmdStan outputs. in addi
 # Drawbacks
 [drawbacks]: #drawbacks
 
-The more different kinds of output files, more effort required on the part of the user
-to configure and manage these outputs.
-
 Implementing and testing the output handlers and formatters is a non-trivial effort,
 especially the effort required to implement the Apache Arrow formatters.
 This will require writing functions which translate the model variable structure
@@ -345,8 +342,3 @@ For previous discussion on Discourse and a nascent proposal, see:  https://disco
 - What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
 
   + Input readers and converters between data formats.
-
-
-
-
-
