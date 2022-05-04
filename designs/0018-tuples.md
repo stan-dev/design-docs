@@ -63,10 +63,13 @@ Tuples can be used as function arguments and return types.
 
 ## Tuple expressions
 
-The expression for creating tuples can follow the array notation (`{ a, b, c }`)
-and vector notation (`[a, b, c]`) and use `(a, b, c)`.  This will create a tuple
+The expression for creating tuples will be `(a, b, c)`.  This will create a tuple
 of type `(typeof(a), typeof(b), typeof(c))`, each subject to the normal
 promotion rules.
+
+This is inspired by the syntax currently used for arrays (`{value, value2, ...}`),
+and for row vector expressions (`[value1, value2, ...]`) with the notable
+difference that tuples allow mixes of types among their different values.
 
 For example, `(1.5, {2.3, 4})` is a tuple with type `(real, array[2] real)`.
 
