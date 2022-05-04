@@ -146,6 +146,15 @@ are not errors should be obvious - we want these annotations to be
 forward-and-backward compatible in time, and we want different backends to still
 be able to process the same model without modification.
 
+The presence of annotations signals the compilers to transform the program while
+maintaining the same behavior (up to floating point precision).
+Particular annotations will be introduced one at a time, each with their own
+review process. When adding a new annotation, care must be taken to ensure it
+behaves nicely with existing annotations; either they must compose in a natural
+way, or the existing annotations will take precedence over the new annotation if
+there are any conflicts between the effects of a new annotation transformation
+and the existing annotation transformations.
+
 The examples provided at the end of the previous section provide a few examples
 of the kind of thing the C++ backend may want to consider supporting. Other
 backends may want to support a subset of these, or a completely different set
