@@ -42,9 +42,9 @@ This format is limited and limiting for several reasons.
 blocks of CSV comment lines are used to record global information.
 For example, the HMC sampler uses comments to report the stepsize, metric type, and metric at the
 end of adaptation and another set of comment lines to report timing information.
-The use of comment lines anywhere in the CSV file, precludes the use of many fast CSV parser libraries.
-Furthermore, to recover information output in a comment block requires writing ad-hoc parsers.
-This is slow, error-prone, and brittle.
+The use of comment lines anywhere in the CSV file precludes the use of most fast CSV parser libraries.
+It is necessary to write an ad-hoc parser to recover the information in the comment block; the
+result is slow, error-prone, and brittle.
 
 * While the plain-text format is human readable, it is suboptimal for further processing.
 Conversion to/from binary is expensive and may lose precision, unless default settings are overridden, which in turn will
@@ -75,20 +75,8 @@ This list of limitations can be recast as the set of features we want to support
 
 * A way to configure the output mechanism to control which information is output.
 
+* For MCMC methods, adding chain id information.
 
-
-## Current implementation
-
-The `stan::services` layer provides a set of calling functions which
-wrap the available inference algorithms.
-These wrapping functions have approximately 20 argument slots which are needed
-to completely configure the inference run.
-The HMC sampler and ADVI calling functions provide two slots for which are used for CSV output files:
-the CSV file contining the sampler outputs and a 
-[diagnostic_file](https://mc-stan.org/docs/2_29/cmdstan-guide/mcmc-config.html#sampler-diag-file)
-which contains the per-iteration latent Hamiltonian dynamics of all model parameters,
-as described here:  https://discourse.mc-stan.org/t/sampler-hmc-diagnostics-file/15386;
-the optimization algorithms only provide a single slot.
 
 For a given run of an inference algorithm with a specific model and dataset,
 the outputs of interest can be classified in terms of information source and content
@@ -142,6 +130,22 @@ These distinctions are not well supported at either the stan services layer beca
 the output streams are overloaded and have no hierarchical structure.
 Nor are they supported at the CmdStan layer, because everything gets packed
 into one CSV file with non-standard encodings through comments.
+
+## Current implementation
+
+Program outputs are managed by `stan::callbacks::writer` object
+which are constructed from a single output stream.
+The `stan::services` layer provides a set of calling functions which
+wrap the available inference algorithms.
+Stan interfaces instantiate the `writer` object and pass it into the `services` layer method.
+
+The calling functions for the HMC sampler and ADVI provide two arguments slots for
+`stan::callbacks::writer` used for CSV output files:
+the CSV file contining the sampler outputs and a 
+[diagnostic_file](https://mc-stan.org/docs/2_29/cmdstan-guide/mcmc-config.html#sampler-diag-file)
+which contains the per-iteration latent Hamiltonian dynamics of all model parameters,
+as described here:  https://discourse.mc-stan.org/t/sampler-hmc-diagnostics-file/15386;
+the optimization algorithms only provide a single output CSV file slot.
 
 
 ## Functional Specification
