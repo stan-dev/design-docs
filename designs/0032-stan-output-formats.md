@@ -13,10 +13,9 @@ It provides an alternative to the use of the non-standard
 as the single record of one run of an inference algorithm.
 Instead, the outputs will consist of multiple files, using
 standard human- and machine-readable formats, resulting in
-a clean separation of different kinds of information into type-appropriate, commonly used formats.
-This will provide more information in a form that is easier for
-downstream analysis and visualization.
-
+a clean separation of different kinds of information into type-appropriate, commonly used formats
+which will make it easier to use and create tools for analysis and visualization.
+This framework will also make it easier to add new outputs and diagnostics to the inference algorithms.
 
 ## Motivation
 [motivation]: #motivation
@@ -27,26 +26,25 @@ It provides a record of the inference run and all resulting diagnostics and esti
 which is used for downstream analysis and visualization.
 When building models for a given dataset or
 developing new inference algorithms, the
-output file format provides too much or not enough information.
-To address this, we need to provide both more structure and more flexibility to the
-output mechanisms available to the core Stan services and inference algorithms.
+output file format sometimes provides too much information,
+more commonly, key pieces of information about the sampler and
+fitted model state are missing.
 
 A CSV file is designed to hold a single table's worth of data in plain text where
 each row of the file contains one row of table data, and all rows have the same number of fields.
-The CSV format is not precisely defined, but almost all modern CSV parsers 
-allow for the first row of data to be treated as a row of column labels
-(the "header row") and also allows comment rows which start with a designated comment prefix character.
 For MCMC sampling, the Stan CSV file consists of one draw from the posterior per row
 and one Stan program variable per column.
 Over time, the Stan CSV file has come to be an amalgam of information about the inference engine configuration,
 the algorithm state, and the algorithm outputs.
 This format is limited and limiting for several reasons.
 
-* Because the Stan CSV file format is a non-standard format, downstream analysis packages need
-to develop specialized parsers to extract and manage a set of outputs.
-For example, the HMC sampler uses comment rows following the header row to report the stepsize, metric type, and metric
-and a final set of comment rows to report sampler timing information.
-This requires writing ad-hoc parsers to recover this information and precludes the use of many fast CSV parser libraries.
+* Because the CSV data table is used for the Stan model variable estimates and sampler state,
+blocks of CSV comment lines are used to record global information.
+For example, the HMC sampler uses comments to report the stepsize, metric type, and metric at the
+end of adaptation and another set of comment lines to report timing information.
+The use of comment lines anywhere in the CSV file, precludes the use of many fast CSV parser libraries.
+Furthermore, to recover information output in a comment block requires writing ad-hoc parsers.
+This is slow, error-prone, and brittle.
 
 * While the plain-text format is human readable, it is suboptimal for further processing.
 Conversion to/from binary is expensive and may lose precision, unless default settings are overridden, which in turn will
