@@ -151,8 +151,7 @@ the optimization algorithms only provide a single output CSV file slot.
 ## Functional Specification
 
 We will modify that core Stan output methods to factor the information
-currently in output as a single Stan CSV file into its constituent elements
-and output each in a standard format.
+in the monolithic Stan CSV file into separate components as outlined above.
 Data currently output as string comments in the CSV files will be structured into JSON,
 using dictionaries, lists and nested combinations thereof.
 Tabular data will be either in CSV file format or Apache Arrow format.
