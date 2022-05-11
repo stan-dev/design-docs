@@ -20,6 +20,8 @@ This framework will also make it easier to add new outputs and diagnostics to th
 ## Motivation
 [motivation]: #motivation
 
+### Current Outputs - limitations
+
 The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
 is the output format used by CmdStan, and therefore by CmdStanPy and CmdStanR.
 It provides a record of the inference run and all resulting diagnostics and estimates
@@ -63,6 +65,8 @@ and then manage the resulting set of per-chain CSV files.
 Stan can now use multi-threading to run multiple chains in a single process,
 but still produces per-chain CSV files.
 
+### Future Outputs - desiderata
+
 This list of limitations can be recast as the set of features we want to support going forward.
 
 * Standard formats for which (efficient, open-source) libraries exist for C++, R, Python, and Julia.
@@ -77,12 +81,12 @@ This list of limitations can be recast as the set of features we want to support
 
 * For MCMC methods, adding chain id information.
 
+### Information inventory, classifications
 
 For a given run of an inference algorithm with a specific model and dataset,
-the outputs of interest can be classified in terms of information source and content
-and information structure.
-
-### Information source
+the outputs of interest can be classified in terms of information source and content,
+information structure, and whether or not they are generated once or on a streaming basis
+(given an underlying iterative process).
 
 There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
@@ -113,23 +117,10 @@ and the final block of comments to record timing information.
 Not recorded explicitly are the chain and iteration information, when running multiple chains,
 or timestamp information for processing events.
 
-### Information structure
-
 The structure of these outputs can be best represented either as table or as a named list of heterogenous elements.
 A cross-cutting classification is whether or not the outputs are one-time outputs or streaming.
 The header row and comment sections of the Stan CSV file are generated once during the inference run.
 The CSV data rows are produced on a streaming basis.
-
-- algorithm config: one-time, hierarchical
-- initialization: one-time, tabular
-- sample & algorithm diagnostics: streaming, tabular
-- metric & step size: one-time, tabular
-- timing information: one-time, hierarchical
-
-These distinctions are not well supported at either the stan services layer because
-the output streams are overloaded and have no hierarchical structure.
-Nor are they supported at the CmdStan layer, because everything gets packed
-into one CSV file with non-standard encodings through comments.
 
 ## Current implementation
 
@@ -150,8 +141,16 @@ the optimization algorithms only provide a single output CSV file slot.
 
 ## Functional Specification
 
-We will modify that core Stan output methods to factor the information
-in the monolithic Stan CSV file into separate components as outlined above.
+Our goal is to refactor the core Stan modules (primarily `stan::callbacks`, `stan::services`)
+into the following components, classified according to the above discussion.
+
+- algorithm config: one-time, hierarchical
+- initialization: one-time, tabular
+- sample & algorithm diagnostics: streaming, tabular
+- metric & step size: one-time, tabular
+- timing information: one-time, hierarchical
+
+
 Data currently output as string comments in the CSV files will be structured into JSON,
 using dictionaries, lists and nested combinations thereof.
 Tabular data will be either in CSV file format or Apache Arrow format.
