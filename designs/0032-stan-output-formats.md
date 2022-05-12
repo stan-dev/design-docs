@@ -20,6 +20,54 @@ This framework will also make it easier to add new outputs and diagnostics to th
 ## Motivation
 [motivation]: #motivation
 
+For a given run of an inference algorithm with a specific model and dataset,
+the outputs of interest can be classified in terms of information source and content,
+information structure, and whether or not they are generated once or on a streaming basis
+(given an underlying iterative process).
+There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
+
+**The Stan model**. The Stan services layer methods call the following functions on the Stan model class
+[``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp):
+
++ `log_prob` returns the unnormalized target density and its gradient given the unconstrained model parameters,
+thus providing access to the model parameters and transformed parameters on the unconstrained scale.
+This is called any number of times during inference, depending on the algorithm.
+
++ `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
+Each call produces one row's worth of data, which is streamed to the CSV file.
+
++ a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
+These are used to create the CSV header row, i.e., they need only be called once per inference run.
+
+**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`.
+These are combined with the outputs from the call to `write_array` to produce a single row's worth of CSV data, which is
+streamed to the output file.
+Other information from the inference algorithm is produced once per run and is reported via comment blocks:
+stepsize and metric for NUTS-HMC; stepsize for ADVI.
+
+**The inference run**.  When CmdStan is used to do inference,
+it uses the initial set of the comments in the Stan CSV file to record the complete set of configuration options
+and the final block of comments to record timing information.
+Not recorded explicitly are the chain and iteration information, when running multiple chains,
+or timestamp information for processing events.
+
+The structure of these outputs can be best represented either as table or as a named list of heterogenous elements.
+A cross-cutting classification is whether or not the outputs are one-time outputs or streaming.
+From the above discussion, we see the following outputs of interest.
+
+- Algorithm configuration -  output once, at the start of the inference run.
+This information is best structured as a set of name, value pairs, which can be output as a JSON object.
+
+- Parameter initial values - output once, in tabular format.
+
+- Posterior sample - output at end of iteration - streaming data in tabular format
+
+- Algorithm diagnostic - currently output every iteration - streaming data in tabular format
+
+- Metric & step size - output once, at end of adaptation - the step-size is scalar, the metric is tabular, the metric type is implicit - unit, diagonal, full matrix.
+
+- Timing information - output once at the end of the inference run.  This information is hierarchical.
+
 ### Current Outputs - limitations
 
 The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
@@ -88,46 +136,6 @@ the algorithm state, and individual variable estimates.
 For downstream analysis we need to evaluate the goodness of fit  (R-hat, ESS, etc),
 and compute statistics for all model parameters and quantities of interest.
 
-### Information inventory, classifications
-
-For a given run of an inference algorithm with a specific model and dataset,
-the outputs of interest can be classified in terms of information source and content,
-information structure, and whether or not they are generated once or on a streaming basis
-(given an underlying iterative process).
-
-There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
-
-**The Stan model**. The Stan services layer methods call the following functions on the Stan model class
-[``stan::model::model_base``](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp):
-
-+ `log_prob` returns the unnormalized target density and its gradient given the unconstrained model parameters,
-thus providing access to the model parameters and transformed parameters on the unconstrained scale.
-This is called any number of times during inference, depending on the algorithm.
-
-+ `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
-Each call produces one row's worth of data, which is streamed to the CSV file.
-
-+ a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
-These are used to create the CSV header row, i.e., they need only be called once per inference run.
-
-**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`.
-These are combined with the outputs from the call to `write_array` to produce a single row's worth of CSV data, which is
-streamed to the output file.
-Other information from the inference algorithm is produced once per run and is reported via comment blocks.
-This includes stepsize and metric for NUTS-HMC and stepsize for ADVI.
-The current format doesn't allow for fuller reporting of per-iteration computation, e.g., for the NUTS-HMC sampler,
-successive leapfrog steps.  Therefore we need to decouple the outputs from the inference engine from the outputs from the model.
-
-**The inference run**.  When CmdStan is used to do inference,
-it uses the initial set of the comments in the Stan CSV file to record the complete set of configuration options
-and the final block of comments to record timing information.
-Not recorded explicitly are the chain and iteration information, when running multiple chains,
-or timestamp information for processing events.
-
-The structure of these outputs can be best represented either as table or as a named list of heterogenous elements.
-A cross-cutting classification is whether or not the outputs are one-time outputs or streaming.
-The header row and comment sections of the Stan CSV file are generated once during the inference run.
-The CSV data rows are produced on a streaming basis.
 
 ## Current implementation
 
@@ -155,21 +163,6 @@ The remainder of the Stan CSV file contents are generated by the `services` laye
 ## Functional Specification
 
 We will create a set of output formats which taken together, can capture all aspects of an inference run.
-From the above discussion, the general information categories are:
-
-- Algorithm configuration -  output once, at the start of the inference run.
-This information is best structured as a set of name, value pairs, which can be output as a JSON object.
-
-- Parameter initial values - output once, in tabular format.
-
-- Posterior sample - output at end of iteration - streaming data in tabular format
-
-- Algorithm diagnostic - currently output every iteration - streaming data in tabular format
-
-- Metric & step size - output once, at end of adaptation - the step-size is scalar, the metric is tabular, the metric type is implicit - unit, diagonal, full matrix.
-
-- Timing information - output once at the end of the inference run.  This information is hierarchical.
-
 Hierarchical data will be output as a JSON object.
 Tabular data will be either in CSV file format or Apache Arrow format.
 An Apache Arrow parquet file consists of an schema followed by one or more rows of data.
