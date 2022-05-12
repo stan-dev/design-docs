@@ -177,11 +177,12 @@ The results from one run of the Stan inference engine will be factored into
 a series of information and type-specific outputs.
 An end-user will be able to specify the outputs of interest.
 The interfaces will have control over the output streams.
-
 For a file-based iterface, such as CmdStan, filesystem directories will be used to organize
 the resulting set of output files, e.g., instead of command-line argument `file=output.csv`,
-the interface will have argument `directory=output`.   The following shows the proposed initial output file name,
-omitting the filetype suffix:
+the interface will have argument `directory=output`.
+
+
+### Kinds of outputs, suggested names
 
 Files which are updated with each iteration (i.e., streaming data), which can be monitored by downstream processes:
 
@@ -210,6 +211,8 @@ Outputs not currently available:
 
 - `algorithm_internal_state` - A table which provides finer-grained reporting of the inference engine state for development, testing, and debugging purposes, one row per operation, e.g., leapfrog step.
 
+### Output fomats
+
 Hierarchical data will be output using JSON notation.
 Tabular data will be either in CSV format (human-readable) or Apache Arrow format (binary).
 An Apache Arrow parquet file consists of an schema followed by one or more rows of data.
@@ -217,32 +220,28 @@ The schema describes the structure of the data objects in each row, allowing the
 process to reconstitute structured objects properly.
 The Arrow libraries for R and Python will allow downstream analysis packages to process these files, either during inference or afterwards.
 
+The Stan CSV output format will continue to be used for CmdStan outputs,
+in addition to the new output formats discussed above.
 
+### Input fomats
 
-## Scope of changes
-[scope]: #scope
-
-The changes in this proposal will directly functions in `stan-dev/stan` at the `stan::services` layer.
-
-Keeping the existing `stan::services` layer method signatures will avoid the need for changes to CmdStan.
-
+Outputs from one inference can become inputs to a subsequent one.
 The input formats used by the inference algorithms are:
 
 - data variable definitions in JSON or [rdump](https://mc-stan.org/docs/cmdstan-guide/rdump.html)
 - initial parameter variables in JSON or rdump
-- for the standalone generated quantities, inputs include the Stan CSV file which contains the a sample from the fitted model.
+- for the standalone generated quantities, inputs include the Stan CSV file which contains the sample from the fitted model.
 
-The Stan CSV output format will continue to be used for CmdStan outputs. in addition to the new output formats discussed above.
+Information from one inference run which would become either data or parameter inits would require converting CSV files to JSON.
+For standalone generated quantities, a sample in Apache format would need to be converted to CSV format.
+We will use existing converter libraries to handle this.
 
+## Scope of changes
+[scope]: #scope
 
-## Drawbacks
-[drawbacks]: #drawbacks
-
-Implementing and testing the output handlers and formatters is a non-trivial effort,
-especially the effort required to implement the Apache Arrow formatters.
-This will require writing functions which translate the model variable structure
-into an Arrow schema at the start of processing.
-Furthermore, adding Apache Arrow libraries complicates the build process.
+The changes in this proposal will affect the `stan-dev/stan` module.
+We will add new functions and logic to `stan::services` and `stan::callbacks`.
+We will keep the existing `stan::services` layer method signatures for backwards compatibility with CmdStan.
 
 
 ## Rationale and alternatives
