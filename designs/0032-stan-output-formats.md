@@ -22,8 +22,8 @@ This framework will also make it easier to add new outputs and diagnostics to th
 
 For a given run of an inference algorithm with a specific model and dataset,
 the outputs of interest can be classified in terms of information source and content,
-information structure, and whether or not they are generated once or on a streaming basis
-(given an underlying iterative process).
+information structure, and whether or not they are output once or on a streaming basis,
+i.e., for an iterative process, the results are output at the end of each iteration.
 There are three sources of information:  the Stan model, the inference algorithm, and the inference run.
 
 **The Stan model**. The Stan services layer methods call the following functions on the Stan model class
@@ -33,15 +33,16 @@ There are three sources of information:  the Stan model, the inference algorithm
 thus providing access to the model parameters and transformed parameters on the unconstrained scale.
 This is called any number of times during inference, depending on the algorithm.
 
-+ `write_array` provides access to parameters, transformed parameters, and generated quantities on the constrained scale.
-Each call produces one row's worth of data, which is streamed to the CSV file.
++ `write_array` returns an array of doubles over all values on the constrained scale
+for all model parameters, transformed parameters, and generated quantities variables.
+This is called any number of times during inference, depending on the algorithm.
 
 + a number of methods provide meta-information about the model:  `model_name`, `(un)constrained_param_names`, `get_dims`.
-These are used to create the CSV header row, i.e., they need only be called once per inference run.
+These need only be called once per inference run as this information is always the same.
 
-**The Inference algorithm**.  Currently, the inference engine outputs are flattened into per-iteration reports, starting with `lp__`.
-These are combined with the outputs from the call to `write_array` to produce a single row's worth of CSV data, which is
-streamed to the output file.
+**The Inference algorithm**.  Currently, the inference engine state is output once per draw.
+This information and the outputs from the call to `write_array` are currently combined into
+a single row's worth of data in the Stan CSV file.
 Other information from the inference algorithm is produced once per run and is reported via comment blocks:
 stepsize and metric for NUTS-HMC; stepsize for ADVI.
 
@@ -51,18 +52,20 @@ and the final block of comments to record timing information.
 Not recorded explicitly are the chain and iteration information, when running multiple chains,
 or timestamp information for processing events.
 
-The structure of these outputs can be best represented either as table or as a named list of heterogenous elements.
-A cross-cutting classification is whether or not the outputs are one-time outputs or streaming.
-From the above discussion, we see the following outputs of interest.
+The structure of these outputs can be best represented either as table,
+i.e., a 2d array of named columns and one or more rows of data,
+or as a named list of heterogenous elements.
+A cross-cutting classification is whether or not the data it output
+once or many times per inference run on a streaming basis.
 
 - Algorithm configuration -  output once, at the start of the inference run.
 This information is best structured as a set of name, value pairs, which can be output as a JSON object.
 
 - Parameter initial values - output once, in tabular format.
 
-- Posterior sample - output at end of iteration - streaming data in tabular format
+- Posterior sample - output once per draw - streaming data in tabular format
 
-- Algorithm diagnostic - currently output every iteration - streaming data in tabular format
+- Algorithm diagnostic - currently output once per draw - streaming data in tabular format
 
 - Metric & step size - output once, at end of adaptation - the step-size is scalar, the metric is tabular, the metric type is implicit - unit, diagonal, full matrix.
 
@@ -196,8 +199,10 @@ in the data table rows of Stan CSV file.
 
 Files which contain global information, produced once per inference algorithm run:
 
-- `stepsize` - A single element table containing the stepsize.
-- `metric` - A table which contains the inverse mass matrix arrived at by adaptation.
+- `hmc_adaptation` - A hierarchical object which contains entries:
+   + `stepsize` - A positive scalar value.
+   + `metric` - A table which contains the inverse mass matrix arrived at by adaptation.
+   + `metric_type` - One of `unit`, `diag`, `dense`.
 
 - `model_metatdata` - A hierarchical object which contains the model variable names, types, dimensions, and declaration block.
 - `config` - A hierarchical object which contains the algorithm configuration, model name, and inference type.
@@ -211,19 +216,26 @@ Outputs not currently available:
 
 - `algorithm_internal_state` - A table which provides finer-grained reporting of the inference engine state for development, testing, and debugging purposes, one row per operation, e.g., leapfrog step.
 
-### Output fomats
+### Output formats
 
-Hierarchical data will be output using JSON notation.
-Tabular data will be either in CSV format (human-readable) or Apache Arrow format (binary).
+JSON notation will be used for hierarchical and structured data.
+Tabular data will be either in
+
+- CSV format (human-readable)
+
+- Apache Arrow format, which is a self-describing binary data format.
 An Apache Arrow parquet file consists of an schema followed by one or more rows of data.
 The schema describes the structure of the data objects in each row, allowing the downstream
 process to reconstitute structured objects properly.
-The Arrow libraries for R and Python will allow downstream analysis packages to process these files, either during inference or afterwards.
+The Arrow libraries for R and Python will allow downstream analysis packages
+to process these files, either during inference or afterwards.
 
-The Stan CSV output format will continue to be used for CmdStan outputs,
-in addition to the new output formats discussed above.
+- Unformatted - the binary values returned by methods on the algorithm and model;
+all responsibility for handling these outputs lies with the caller.
 
-### Input fomats
+The Stan CSV output format will remain available via CmdStan.
+
+### Input formats
 
 Outputs from one inference can become inputs to a subsequent one.
 The input formats used by the inference algorithms are:
