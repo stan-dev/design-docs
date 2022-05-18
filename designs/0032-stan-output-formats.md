@@ -263,16 +263,16 @@ This provides an extensible mechanism for adding future outputs.
 - The values of enum class `OutputFormat` correspond to available output formats.
 We expect to implement at least the following:
 
-    + `legacy` - Stan CSV format
-    + `CSV` - tabular data in CSV, other structured data is JSON
-    + `arrow` - tabular data in Apache Arrow, other structured data is JSON
-    + `raw` - tabular data is output as vector of binary values
+    + `Arrow` - tabular data in Apache Arrow, other structured data is JSON
+    + `Csv` - tabular data in CSV, other structured data is JSON
+    + `Raw` - tabular data is output as vector of binary values
+    + `StanCsv` - legacy Stan CSV format
 
 We will define an `OutputWriter` class which and we will add new methods to
 the services layer calling functions which take a single argument `output_writer`u
 (instead of arguments `sample_writer` and `diagnostic_writer`).
 The `OutputWriter` class will be sub-classed by output format:
-`ArrowOutputWriter` `CsvOutputWriter`, `JsonOutputWriter`, `RawOutputWriter`.
+`ArrowOutputWriter` `CsvOutputWriter`, `RawOutputWriter`, `StanCsvOutputWriter`.
 
 The `OutputWriter` object will be instantiated by the Stan interfaces
 from a Stan model object and a set of outputs of interest.
