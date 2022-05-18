@@ -248,6 +248,42 @@ Information from one inference run which would become either data or parameter i
 For standalone generated quantities, a sample in Apache format would need to be converted to CSV format.
 We will use existing converter libraries to handle this.
 
+## Technical Specification
+
+To implement the features outlined in the Functional Specification
+will require changes in the `stan::services` and `stan::callbacks` layers.
+
+We will define two [C++ Enumeration](https://en.cppreference.com/w/cpp/language/enum)
+classes: `InfoType` and `OutputFormat`.
+
+- The values of enum class `InfoType` correspond to the information items listed in
+the functional specification, e.g., `LP` (log_prob), `sample`, `metric`, etc.
+This provides an extensible mechanism for adding future outputs.
+
+- The values of enum class `OutputFormat` correspond to available output formats.
+We expect to implement at least the following:
+
+    + `legacy` - Stan CSV format
+    + `CSV` - tabular data in CSV, other structured data is JSON
+    + `arrow` - tabular data in Apache Arrow, other structured data is JSON
+    + `raw` - tabular data is output as vector of binary values
+
+We will define an `OutputWriter` class which and we will add new methods to
+the services layer calling functions which take a single argument `output_writer`u
+(instead of arguments `sample_writer` and `diagnostic_writer`).
+The `OutputWriter` class will be sub-classed by output format:
+`ArrowOutputWriter` `CsvOutputWriter`, `JsonOutputWriter`, `RawOutputWriter`.
+
+The `OutputWriter` object will be instantiated by the Stan interfaces
+from a Stan model object and a set of outputs of interest.
+The instantiated model object provides the information needed to format and filter
+the values produced by the model's  `write_array` function.
+
+The `OutputWriter` class provides a callback method `write_info`
+which is parameterized by information type, and its corresponding data.
+Based on the information type, the `OutputWriter` object will write
+the data to the appropriate output stream.
+
 ## Scope of changes
 [scope]: #scope
 
