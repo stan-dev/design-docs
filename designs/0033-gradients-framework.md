@@ -143,50 +143,90 @@ Now the call to `function_gradients` includes two tuples of gradient functors - 
       std::forward_as_tuple(fwd_grad_fun));
 ```
 
-
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-This is the technical portion of the RFC. Explain the design in sufficient detail that:
+For all input types, the return value is calculated by calling `math::apply()` with the values-functor on the tuple of input arguments (after calling `value_of` for `rev` or `fwd`).
 
-- Its interaction with other features is clear.
-- It is reasonably clear how the feature would be implemented.
-- Corner cases are dissected by example.
+## Reverse-Mode
 
-The section should return to the examples given in the previous section, and explain more fully how the detailed proposal makes those examples work.
+For reverse-mode, the gradients are constructed using `reverse_pass_callback()`. The tuple of (`var` type) input arguments and gradient functors are iterated over, accumulating the adjoints for the respective input using the specified gradient functor:
+
+```cpp
+  reverse_pass_callback(
+      [rev_grad_fun_tuple, arena_tuple, prim_tuple, rtn]() mutable {
+        // Iterate over input arguments, applying the respective gradient
+        // function with the tuple of extracted primitive values
+        walk_tuples(
+            [&](auto&& grad_funs, auto&& arg) {
+              // Only calculate gradients if the input argument is not primitive
+              if (!is_constant_all<decltype(arg)>::value) {
+                // Need to wrap the argument in a forward_as<var>() so that it
+                // will compile with both primitive and var inputs
+                forward_as<promote_scalar_t<var, decltype(arg)>>(arg).adj() +=
+                    // Use the relevant gradient function with the tuple of
+                    // primitive arguments
+                    math::apply(
+                        [&](auto&&... args) {
+                          return grad_funs(rtn.val_op(), rtn.adj_op(),
+                                   internal::arena_val(
+                                       std::forward<decltype(args)>(args))...);
+                        },
+                        prim_tuple);
+              }
+            },
+            std::forward<RevGradFunT>(rev_grad_fun_tuple),
+            std::forward<decltype(arena_tuple)>(arena_tuple));
+      });
+```
+
+Where `walk_tuples` is a functor for the parallel iteration over multiple tuples (parallel as in `pmap`, rather than multi-threaded).
+
+## Forward-Mode
+
+A similar approach is used for forward-mode, but instead the gradients are accumulated into a single variable which is then used to construct the return `fvar`:
+
+```cpp
+  auto d_ = internal::initialize_grad(std::forward<rtn_t>(rtn));
+
+  walk_tuples(
+      [&](auto&& f, auto&& arg, auto&& dummy) {
+        using arg_t = decltype(arg);
+        if (!is_constant_all<arg_t>::value) {
+          d_ += math::apply(
+              [&](auto&&... args) {
+                return f(rtn,
+                         forward_as<promote_scalar_t<ReturnT, arg_t>>(arg).d(),
+                         args...);
+              },
+              val_tuple);
+        }
+      },
+      std::forward<FwdGradFunT>(fwd_grad_fun_tuple),
+      std::forward<ArgsTupleT>(args_tuple),
+      std::forward<decltype(dummy_tuple)>(dummy_tuple));
+
+  return to_fvar(rtn, d_);
+```
+
+Where `internal::initialize_grad` is used to initialise a variable with the same type and dimension as the return value.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Why should we *not* do this?
+This does appear to increase compilation time - given the increased complexity of templating and tuple manipulation
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-- Why is this design the best in the space of possible designs?
-- What other designs have been considered and what is the rationale for not choosing them?
-- What is the impact of not doing this?
+The best alternative is the current approach, of separate specifications for `prim`, `fwd`, and `rev`. But this has the limitations mentioned in the Motivation section.
 
 # Prior art
 [prior-art]: #prior-art
 
-Discuss prior art, both the good and the bad, in relation to this proposal.
-A few examples of what this can include are:
-
-- For language, library, tools, and compiler proposals: Does this feature exist in other programming languages and what experience have their community had?
-- For community proposals: Is this done by some other community and what were their experiences with it?
-- For other teams: What lessons can we learn from what other communities have done here?
-- Papers: Are there any published papers or great posts that discuss this? If you have some relevant papers to refer to, this can serve as a more detailed theoretical background.
-
-This section is intended to encourage you as an author to think about the lessons from other languages, provide readers of your RFC with a fuller picture.
-If there is no prior art, that is fine - your ideas are interesting to us whether they are brand new or if it is an adaptation from other languages.
-
-Note that while precedent set by other languages is some motivation, it does not on its own motivate an RFC.
-Please also take into consideration that rust sometimes intentionally diverges from common language features.
+None that I'm aware of
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- What parts of the design do you expect to resolve through the RFC process before this gets merged?
-- What parts of the design do you expect to resolve through the implementation of this feature before stabilization?
-- What related issues do you consider out of scope for this RFC that could be addressed in the future independently of the solution that comes out of this RFC?
+- Is an increase in compilation times likely to be a blocker for users?
