@@ -42,21 +42,19 @@ These need only be called once per inference run as this information is always t
 
 **The Inference algorithm**.  Currently, the inference engine state is output once per draw.
 This information and the outputs from the call to `write_array` are currently combined into
-a single row's worth of data in the Stan CSV file.
-Other information from the inference algorithm is produced once per run and is reported via comment blocks:
+a single vector's worth of information.
+Other information from the inference algorithm is produced once per run:
 stepsize and metric for NUTS-HMC; stepsize for ADVI.
 
 **The inference run**.  When CmdStan is used to do inference,
-it uses the initial set of the comments in the Stan CSV file to record the complete set of configuration options
-and the final block of comments to record timing information.
+it writes an initial set of comments to the Stan CSV file that record
+the complete set of configuration options and a final block of comments
+that record timing information.
 Not recorded explicitly are the chain and iteration information, when running multiple chains,
 or timestamp information for processing events.
 
-The structure of these outputs can be best represented either as table,
-i.e., a 2d array of named columns and one or more rows of data,
-or as a named list of heterogenous elements.
-A cross-cutting classification is whether or not the data it output
-once or many times per inference run on a streaming basis.
+These information items can be best represented as one of two kinds of data structures:
+either a table or as a named list of heterogenous elements.
 
 - Algorithm configuration -  output once, at the start of the inference run.
 This information is best structured as a set of name, value pairs, which can be output as a JSON object.
@@ -67,15 +65,14 @@ This information is best structured as a set of name, value pairs, which can be 
 
 - Algorithm diagnostic - currently output once per draw - streaming data in tabular format
 
-- Metric & step size - output once, at end of adaptation - the step-size is scalar, the metric is tabular, the metric type is implicit - unit, diagonal, full matrix.
+- HMC tuning parameters metric and step size - output once, at end of adaptation - the step-size is scalar, the metric is tabular, the metric type is implicit - unit, diagonal, full matrix.
 
 - Timing information - output once at the end of the inference run.  This information is hierarchical.
 
 ### Current Outputs - limitations
 
 The [Stan CSV file format](https://mc-stan.org/docs/cmdstan-guide/stan_csv.html)
-is the output format used by CmdStan, and therefore by CmdStanPy and CmdStanR.
-It provides a record of the inference run and all resulting diagnostics and estimates
+provides a record of the inference run and all resulting diagnostics and estimates
 which is used for downstream analysis and visualization.
 When building models for a given dataset or
 developing new inference algorithms, the
@@ -253,29 +250,22 @@ We will use existing converter libraries to handle this.
 To implement the features outlined in the Functional Specification
 will require changes in the `stan::services` and `stan::callbacks` layers.
 
-We will define two [C++ Enumeration](https://en.cppreference.com/w/cpp/language/enum)
-classes: `InfoType` and `OutputFormat`.
+We will define a [C++ Enumeration](https://en.cppreference.com/w/cpp/language/enum)
+class: `InfoType`.
 
 - The values of enum class `InfoType` correspond to the information items listed in
 the functional specification, e.g., `LP` (log_prob), `sample`, `metric`, etc.
 This provides an extensible mechanism for adding future outputs.
 
-- The values of enum class `OutputFormat` correspond to available output formats.
-We expect to implement at least the following:
-
-    + `Arrow` - tabular data in Apache Arrow, other structured data is JSON
-    + `Csv` - tabular data in CSV, other structured data is JSON
-    + `Raw` - tabular data is output as vector of binary values
-    + `StanCsv` - legacy Stan CSV format
 
 We will define an `OutputWriter` class which and we will add new methods to
-the services layer calling functions which take a single argument `output_writer`u
+the services layer calling functions which take a single argument `output_writer`
 (instead of arguments `sample_writer` and `diagnostic_writer`).
 The `OutputWriter` class will be sub-classed by output format:
 `ArrowOutputWriter` `CsvOutputWriter`, `RawOutputWriter`, `StanCsvOutputWriter`.
 
 The `OutputWriter` object will be instantiated by the Stan interfaces
-from a Stan model object and a set of outputs of interest.
+from a Stan model object and a specified set of outputs of interest.
 The instantiated model object provides the information needed to format and filter
 the values produced by the model's  `write_array` function.
 
@@ -283,6 +273,13 @@ The `OutputWriter` class provides a callback method `write_info`
 which is parameterized by information type, and its corresponding data.
 Based on the information type, the `OutputWriter` object will write
 the data to the appropriate output stream.
+For example, `ArrowOutputWriter` will send the joint log prob (`lp__`) to a file `lp.arrow`,
+the outputs for the model's `write_array` function to a file `draws.arrow`, and
+the sampler metric information to `hmc_adaptation.json`.
+(_Note_: class, method, and file names are subject to change).
+The `StanCsvOutputWriter` will send all information to a single `output.csv` file
+in the Stan CSV format, described at the start of this design.
+
 
 ## Scope of changes
 [scope]: #scope
