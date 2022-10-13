@@ -39,7 +39,7 @@ In Stan, tuples allow packaging of different types together into one value.
 A tuple variable is declared as follows
 
 ```
-(T1, ..., TN) x;
+tuple(T1, ..., TN) x;
 ```
 
 where `T1` through `TN` are themselves type specifications. Tuples are
@@ -48,7 +48,7 @@ recursive - they can contain other tuples.
 A pair containing one integer and one real value could be declared
 
 ```
-(int, real) p;
+tuple(int, real) p;
 ```
 
 These types can be any Stan type which would be valid in that block/context. For
@@ -56,7 +56,7 @@ example, one can define a parameter which is a pair of an array of real values a
 simplex like so
 
 ```
-(array[5] real, simplex[10]) param;
+tuple(array[5] real, simplex[10]) param;
 ```
 
 Tuples can be used as function arguments and return types.
@@ -64,14 +64,14 @@ Tuples can be used as function arguments and return types.
 ## Tuple expressions
 
 The expression for creating tuples will be `(a, b, c)`.  This will create a tuple
-of type `(typeof(a), typeof(b), typeof(c))`, each subject to the normal
+of type `tuple(typeof(a), typeof(b), typeof(c))`, each subject to the normal
 promotion rules.
 
 This is inspired by the syntax currently used for arrays (`{value, value2, ...}`),
 and for row vector expressions (`[value1, value2, ...]`) with the notable
 difference that tuples allow mixes of types among their different values.
 
-For example, `(1.5, {2.3, 4})` is a tuple with type `(real, array[2] real)`.
+For example, `(1.5, {2.3, 4})` is a tuple with type `tuple(real, array[2] real)`.
 
 ## Tuple accessors
 
@@ -83,7 +83,7 @@ projecting.
 
 For example,
 ```
-(S, T, U) x;
+tuple(S, T, U) x;
 ...
 S a = x.1;
 T b = x.2;
@@ -103,7 +103,7 @@ Tuples and their elements may be used on the left hand side of assignment
 statements, as in:
 
 ```
-(double, int) a;
+tuple(double, int) a;
 a = (3.7, 2);  // assign to
 a.1 = 4.2;
 ```
@@ -112,11 +112,11 @@ a.1 = 4.2;
 
 Like other Stan container types, tuples are covariant. That means that whenever
 `a` is a subtype of `b` (e.g., `int` is a subtype of `real`), then
-`(..., a,...)` is a subtype of `(..., b, ...)` as a tuple.
+`tuple(..., a,...)` is a subtype of `tuple(..., b, ...)` as a tuple.
 
 This would allow you to assign an integer and double tuple to a pair of double
-value tuples, etc. For example, `(int, double, matrix)` assignable to
-`(double, double, matrix)`.
+value tuples, etc. For example, `tuple(int, double, matrix)` assignable to
+`tuple(double, double, matrix)`.
 
 ## Input and Output formats
 
@@ -126,7 +126,7 @@ These proposals are specific to the CmdStan interface.
 
 Tuples are represented as JSON objects with indices stored as keys.
 
-For example, the Stan declaration `(int, array[2] real) d;` can be represented
+For example, the Stan declaration `tuple(int, array[2] real) d;` can be represented
 in JSON as follows:
 
 ```json
@@ -144,7 +144,7 @@ Like all Stan objects, tuples are flattened into a single row for output. Due to
 the existing convention of using `.` for array and matrix indices in the output
 format, the `:` character is used.
 
-For example, the Stan declaration `(int, array[2] real) d;` will produce the
+For example, the Stan declaration `tuple(int, array[2] real) d;` will produce the
 following column headers in the output CSV file:
 
 ```csv
@@ -159,17 +159,17 @@ implementation would need to be in the standard library.
 
 ```
 T1
-head((T1, ..., TN) a);
+head(tuple(T1, ..., TN) a);
 ```
 
 ```
-(T2, ..., TN)
-tail((T1, T2, ..., TN) a);
+tuple(T2, ..., TN)
+tail(tuple(T1, T2, ..., TN) a);
 ```
 
 ```
-(T1, T2, ..., TN)
-concat(T1 a, (T2, ..., TN) b);
+tuple(T1, T2, ..., TN)
+concat(T1 a, tuple(T2, ..., TN) b);
 ```
 
 ## Destructuring assignment (optional)
@@ -225,7 +225,7 @@ set of parallel arrays).
 
 This is best shown by a complicated but illustrative example:
 
-Given the Stan declaraction `array[2] (int, (real, array[3] complex)) data;`
+Given the Stan declaraction `array[2] tuple(int, tuple(real, array[3] complex)) data;`
 
 - The call `context.vals_i("data.1")` should return a `std::vector<int>` of
   length 2.
@@ -320,10 +320,15 @@ needed to implement tuples would make the later implementation of structs much
 easier.
 
 ## Alternative declaration syntax
-The syntax `tuple(T1,T2,T3)` was considered as an alternative to `(T1,T2,T3)`.
-This is more verbose, and is not used in Python or OCaml.
+The syntax `(T1,T2,T3)` was considered as an alternative to `tuple(T1,T2,T3)`.
+This is is used by Python and OCaml, but is less explicit and may be confusing
+for users. The use of the keyword `tuple` also makes searching programs easier,
+and aligns with the `array` keyword used in Stan 2.26+.
 
-One advantage to this system is a more natural handling of singleton tuples.
+This syntax is **not** used for tuple expressions. While it could be, this is
+overly verbose and looks like a function call rather than an expression.
+
+One advantage to using this for expressions _would_ be more natural handling of singleton tuples.
 Using only parenthesis leads to the issue (also found in e.g. Python) where the
 expression `(1)` is not a tuple containing an int, but just an integer. The
 tuple expression is `(1,)`. This somewhat awkward syntax is also used by Stan,
