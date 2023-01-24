@@ -55,9 +55,10 @@ Nonetheless, in the following spec, we discuss options by grouping inputs, outpu
 
 * data\_values
 
-* param\_init\_values
+* param\_init\_values - list of parameter names, values for some or all model parameters - overrides random inits
 
-* param\_init\_range
+* param\_init\_ranges  - list of parameter names, upper bound x of range which is distributed uniform [-x, x] - used when no init values are supplied.
+
 
 ### Outputs
 
@@ -69,14 +70,36 @@ Nonetheless, in the following spec, we discuss options by grouping inputs, outpu
 
 ### Runtime config
 
-* algo
+* a, algo, algorithm: one of "hmc", "optimize", "laplace", "variational", "eval-log-prob"
 
 * random\_seed, random\_offset
 
-#### Algorithm-specific config
+* verbosity - what to report to stdout / stderr  ("refresh")
+
+#### HMC config
+
+* chains - exec must be compiled for multi-threading
+
+* hmc_params
+  + stepsize\_init\_value
+  + metric\_type - one of unit, diag, or dense
+  + metric\_init\_values - if specified, must match metric type
+
+* warmup\_schedule - 3-stage adapt, pathfinder adapt
+
+* num\_draws - draws post-warmup
+
+* hmc\_output config
+  + save\_adaptation - boolean
+  + post\_draws - number of post-adaptation draws to report
+  + report\_gradiants ("diagnostics-file")
+
+* hmc\_nuts\_config
+  + max\_treedepth
+  + adapt\_delta (metropolis accept rate?)
 
 
-
+Note: eliminate notion of thinning - use binary formats instead
 
 
 
