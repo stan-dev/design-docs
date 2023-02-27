@@ -391,3 +391,5 @@ being statically declared and typed.
 [unresolved-questions]: #unresolved-questions
 
 - Which, if any, standard library functions should accept or return tuples.
+- How the `get_dims` function of the model class should handle tuple parameters
+  (see [stanc3#1242](https://github.com/stan-dev/stanc3/issues/1242))
