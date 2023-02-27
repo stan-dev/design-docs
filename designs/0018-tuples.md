@@ -232,7 +232,9 @@ Given the Stan declaraction `array[2] tuple(int, tuple(real, array[3] complex)) 
 - The call `context.vals_r("data.2.1")` should return a `std::vector<double>` of
   length 2.
 - The call `context.vals_c("data.2.2")` should return a
-  `std::vector<std::complex<double>>` of length 2*3 = 6.
+  `std::vector<std::complex<double>>` of length 2*3 = 6. The data from this call
+  should be the data for `data[1].2.2` followed by the data for `data[2].2.2`,
+  concatenated together into one vector.
 
 It is the job of the compiler to generate code which takes these objects and
 produces one object `data` of the desired type and shape. This is similar to how
