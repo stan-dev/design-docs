@@ -8,9 +8,10 @@
 
 This proposal is to add tuples to the Stan language. Tuples are _static_,
 heterogeneous containers, meaning that they have a known, fixed size in the
-program and can contain elements which are of different types and sizes. Tuples
-are common in many languages from Python to OCaml and C++. Formally, a tuple is
-a product type of its contained types.
+program and can contain elements which are of different types and sizes. They
+allow access only at known elements (known as "projection"), rather than dynamic
+indexing. Tuples are common in many languages from Python to OCaml and C++.
+Formally, a tuple is a product type of its contained types.
 
 # Motivation
 [motivation]: #motivation
@@ -240,6 +241,15 @@ It is the job of the compiler to generate code which takes these objects and
 produces one object `data` of the desired type and shape. This is similar to how
 the current implementation reads in matrices as a flat array and generates the
 necessary code to reshape them.
+
+Dimension validation is also done with these flat names. In the same order as
+above:
+
+- The expected dimensionality of the first element (in the sense of
+  `context.validate_dims(...,"data.1", ...)`) is the vector `{2}`.
+- The expected dimensionality of `"data.2.1"` is the vector `{2}`.
+- The expected dimensionality of `"data.2.2"` in the var context is the vector
+  `{2,3,2}`, since in JSON complex values are represented as a length-2 array.
 
 
 ### Stan library support
