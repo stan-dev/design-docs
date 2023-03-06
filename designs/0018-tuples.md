@@ -6,12 +6,12 @@
 # Summary
 [summary]: #summary
 
-This proposal is to add tuples to the Stan language. Tuples are _static_,
-heterogeneous containers, meaning that they have a known, fixed size in the
-program and can contain elements which are of different types and sizes. They
-allow access only at known elements (known as "projection"), rather than dynamic
-indexing. Tuples are common in many languages from Python to OCaml and C++.
-Formally, a tuple is a product type of its contained types.
+This proposal is to add tuples to the Stan language. Tuples are
+heterogeneous containers with a known, fixed number of elements ("slots").
+Contrasting arrays, tuples can contain elements which are of different types
+and sizes. They allow access only at known elements (known as "projection"),
+rather than dynamic indexing. Tuples are common in many languages from Python to
+OCaml and C++. Formally, a tuple is a product type of its contained types.
 
 # Motivation
 [motivation]: #motivation
@@ -57,7 +57,12 @@ example, one can define a parameter which is a pair of an array of real values a
 simplex like so
 
 ```
-tuple(array[5] real, simplex[10]) param;
+data {
+  int<lower=0> N;
+}
+parameters {
+  tuple(array[N] real, simplex[N * 2]) param;
+}
 ```
 
 Tuples can be used as function arguments and return types.
