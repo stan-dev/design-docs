@@ -77,10 +77,10 @@ For example, `(1.5, {2.3, 4})` is a tuple with type `tuple(real, array[2] real)`
 ## Tuple accessors
 
 A key difference between tuples and other containers in Stan is that they have a
-fixed size which is known during compilation. As such, they are accessed using
-indexing which is also known during compilation. This is done using `.` followed
-by a integer literal after the tuple. This static indexing is also known as
-projecting.
+fixed number of slots, which is known during compilation. As such, they are
+accessed using indexing which is also known during compilation. This is done
+using `.` followed by a integer literal after the tuple. This static indexing is
+also known as projecting.
 
 For example,
 ```
