@@ -43,7 +43,7 @@ A tuple variable is declared as follows
 tuple(T1, ..., TN) x;
 ```
 
-where `T1` through `TN` are themselves type specifications. Tuples are
+where `T1` through `TN` (`N` >= 2) are themselves type specifications. Tuples are
 recursive - they can contain other tuples.
 
 A pair containing one integer and one real value could be declared
@@ -257,6 +257,7 @@ above:
   `{2,3,2}`, since in JSON complex values are represented as a length-2 array.
 
 
+
 ### Stan library support
 
 Several functions will need additional overloads to support the implementation
@@ -345,14 +346,6 @@ and aligns with the `array` keyword used in Stan 2.26+.
 This syntax is **not** used for tuple expressions. While it could be, this is
 overly verbose and looks like a function call rather than an expression.
 
-One advantage to using this for expressions _would_ be more natural handling of singleton tuples.
-Using only parenthesis leads to the issue (also found in e.g. Python) where the
-expression `(1)` is not a tuple containing an int, but just an integer. The
-tuple expression is `(1,)`. This somewhat awkward syntax is also used by Stan,
-but we additionally note that even compared to something like Python, the
-singleton tuple in Stan is exceptionally useless and will likely never appear in
-a program "in the wild".
-
 ## Alternative JSON formats
 
 Two other formats were considered for JSON representations.
@@ -389,6 +382,16 @@ worry about.
 
 Finally, the selected JSON format is also desirable for if structs are
 implemented at a later time.
+
+# Size-one tuples
+
+Using only parenthesis leads to the issue (also found in e.g. Python) where the
+expression `(1)` is not a tuple containing an int, but just an integer. The
+tuple expression is `(1,)`. This somewhat awkward syntax could also used by Stan,
+but we additionally note that even compared to something like Python, the
+singleton tuple in Stan is exceptionally useless and will likely never appear in
+a program "in the wild".
+
 
 # Prior art
 [prior-art]: #prior-art
