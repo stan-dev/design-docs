@@ -240,7 +240,9 @@ Given the Stan declaraction `array[2] tuple(int, tuple(real, array[3] complex)) 
 - The call `context.vals_c("data.2.2")` should return a
   `std::vector<std::complex<double>>` of length 2*3 = 6. The data from this call
   should be the data for `data[1].2.2` followed by the data for `data[2].2.2`,
-  concatenated together into one vector.
+  concatenated together into one vector. If the data for `data[1].2.2` would
+  normally be in column-major order, it should still be, but note that the
+  "outer" array dimensions created by this serialization format should not be.
 
 It is the job of the compiler to generate code which takes these objects and
 produces one object `data` of the desired type and shape. This is similar to how
