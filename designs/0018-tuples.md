@@ -258,7 +258,28 @@ above:
 - The expected dimensionality of `"data.2.2"` in the var context is the vector
   `{2,3,2}`, since in JSON complex values are represented as a length-2 array.
 
+### Constraints
 
+For the initial implementation, constraints on tuples will follow
+the same rule as given above for types - elements of a tuple
+"can be any Stan type which would be valid in that block/context".
+
+So, individual elements of a tuple can receive constraints the same as
+they would if written as plain Stan types. For example,
+
+`array[I,J,K] tuple(array[N,M] real<lower=L>, int) some_tuple;`
+
+declares an array of tuples, where the first element of each tuple is a
+lower-bounded array of real numbers. The valid sizes for `L`, the lower bound,
+would be the same as for the plain declaration `array[N,M] real<lower=L>`,
+i.e., `real` (each element of the array has the same lower bound) or `array[N,M]
+real` (each element of the array has an elementwise bound).
+
+One may also desire the ability to mix 'inner' dimensions (`N`, `M` above) with
+'outer' ones (`I`, `J`, or `K`). This is not required for the initial
+implementation, but should be considered later, alongside more general
+"broadcasting" style behavior for bounds, including for arrays with no tuples.
+The details of this are left for future design work.
 
 ### Stan library support
 
