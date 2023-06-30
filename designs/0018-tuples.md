@@ -43,7 +43,7 @@ A tuple variable is declared as follows
 tuple(T1, ..., TN) x;
 ```
 
-where `T1` through `TN` are themselves type specifications. Tuples are
+where `T1` through `TN` (`N` >= 2) are themselves type specifications. Tuples are
 recursive - they can contain other tuples.
 
 A pair containing one integer and one real value could be declared
@@ -240,7 +240,9 @@ Given the Stan declaraction `array[2] tuple(int, tuple(real, array[3] complex)) 
 - The call `context.vals_c("data.2.2")` should return a
   `std::vector<std::complex<double>>` of length 2*3 = 6. The data from this call
   should be the data for `data[1].2.2` followed by the data for `data[2].2.2`,
-  concatenated together into one vector.
+  concatenated together into one vector. If the data for `data[1].2.2` would
+  normally be in column-major order, it should still be, but note that the
+  "outer" array dimensions created by this serialization format should not be.
 
 It is the job of the compiler to generate code which takes these objects and
 produces one object `data` of the desired type and shape. This is similar to how
@@ -256,6 +258,28 @@ above:
 - The expected dimensionality of `"data.2.2"` in the var context is the vector
   `{2,3,2}`, since in JSON complex values are represented as a length-2 array.
 
+### Constraints
+
+For the initial implementation, constraints on tuples will follow
+the same rule as given above for types - elements of a tuple
+"can be any Stan type which would be valid in that block/context".
+
+So, individual elements of a tuple can receive constraints the same as
+they would if written as plain Stan types. For example,
+
+`array[I,J,K] tuple(array[N,M] real<lower=L>, int) some_tuple;`
+
+declares an array of tuples, where the first element of each tuple is a
+lower-bounded array of real numbers. The valid sizes for `L`, the lower bound,
+would be the same as for the plain declaration `array[N,M] real<lower=L>`,
+i.e., `real` (each element of the array has the same lower bound) or `array[N,M]
+real` (each element of the array has an elementwise bound).
+
+One may also desire the ability to mix 'inner' dimensions (`N`, `M` above) with
+'outer' ones (`I`, `J`, or `K`). This is not required for the initial
+implementation, but should be considered later, alongside more general
+"broadcasting" style behavior for bounds, including for arrays with no tuples.
+The details of this are left for future design work.
 
 ### Stan library support
 
@@ -345,14 +369,6 @@ and aligns with the `array` keyword used in Stan 2.26+.
 This syntax is **not** used for tuple expressions. While it could be, this is
 overly verbose and looks like a function call rather than an expression.
 
-One advantage to using this for expressions _would_ be more natural handling of singleton tuples.
-Using only parenthesis leads to the issue (also found in e.g. Python) where the
-expression `(1)` is not a tuple containing an int, but just an integer. The
-tuple expression is `(1,)`. This somewhat awkward syntax is also used by Stan,
-but we additionally note that even compared to something like Python, the
-singleton tuple in Stan is exceptionally useless and will likely never appear in
-a program "in the wild".
-
 ## Alternative JSON formats
 
 Two other formats were considered for JSON representations.
@@ -389,6 +405,16 @@ worry about.
 
 Finally, the selected JSON format is also desirable for if structs are
 implemented at a later time.
+
+# Size-one tuples
+
+Using only parenthesis leads to the issue (also found in e.g. Python) where the
+expression `(1)` is not a tuple containing an int, but just an integer. The
+tuple expression is `(1,)`. This somewhat awkward syntax could also used by Stan,
+but we additionally note that even compared to something like Python, the
+singleton tuple in Stan is exceptionally useless and will likely never appear in
+a program "in the wild".
+
 
 # Prior art
 [prior-art]: #prior-art
