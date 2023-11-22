@@ -1,7 +1,7 @@
-- Feature Name: (fill me in with a unique ident, my_awesome_feature)
-- Start Date: (fill me in with today's date, YYYY-MM-DD)
-- RFC PR: (leave this empty)
-- Stan Issue: (leave this empty)
+- Feature Name: cmdstanrs
+- Start Date: 2023-11-22
+- RFC PR:
+- Stan Issue:
 
 # Summary
 [summary]: #summary
@@ -42,11 +42,22 @@ desired), call the executable with arguments (translated from
 strongly-typed argument tree), and obtain a self-contained context
 which encapsulates the pertinent information from the call.
 
-## Assumptions
+### Assumptions
 
 We assume (at our peril) that Rust programmers that will be able to
 figure out how to satisfy the following requirement:
 - a working CmdStan installation exists at some user-accessible path
+
+### Processes, IO
+
+The proposal is to use the Rust `std` library, in particular the
+[process](https://doc.rust-lang.org/std/process/index.html),
+[path](https://doc.rust-lang.org/std/path/index.html),
+[fs](https://doc.rust-lang.org/std/fs/index.html), and
+[ffi](https://doc.rust-lang.org/std/ffi/index.html) modules, to
+orchestrate processes, interact with file system and handle
+cross-platform concerns. This will yield a library which is portable,
+provided that it is (cross-)compiled for the intended target.
 
 ## Control: compilation and calling the resultant executable
 
@@ -86,17 +97,6 @@ call. This structure can then be used to direct calls of
 present to expose the context to the user and perform utility
 functions (e.g. return a list of output file paths).
 
-## Processes, IO
-
-The proposal is to use the Rust `std` library, in particular the
-[process](https://doc.rust-lang.org/std/process/index.html),
-[path](https://doc.rust-lang.org/std/path/index.html),
-[fs](https://doc.rust-lang.org/std/fs/index.html), and
-[ffi](https://doc.rust-lang.org/std/ffi/index.html) modules, to
-orchestrate processes, interact with file system and handle
-cross-platform concerns. This will yield a library which is portable,
-provided that it is (cross-)compiled for the intended target.
-
 ## Arguments and options
 
 Stan provides several inference engines, each with a large number of
@@ -121,7 +121,7 @@ languages.
 The (sloppy) productions for the command line language are:
 ```text
 tree    -> terms
-terms   -> term " " term | term
+terms   -> terms " " term | term
 term    -> pair | product | sum
 pair    -> key "=" value
 product -> type " " pairs
@@ -182,9 +182,9 @@ of two aspects.
 
 ### Serialization
 
-It is trivial to provide a method such as 
+It is trivial to provide a function such as 
 ```rust
-fn `write_json<T: Serialize>(data: T, file: &Path) {}`
+fn write_json<T: Serialize>(data: &T, file: &Path) {}
 ```
 but it serves no purpose -- it does not enforce the conventions
 adopted for representing Stan data types in JSON (e.g. matrices
@@ -207,7 +207,7 @@ choices, but nonetheless represent decisions to be made!
 
 From a design perspective, this is a great place to defer to the user,
 at least for the moment. A principled approach would involve writing a
-data format for [serde](https://serde.rs/)
+data format for [serde](https://serde.rs/).
 
 ### Deserialization
 
