@@ -17,6 +17,8 @@ The goal is to provide an interface which enables users to:
   making these available for programmatic use)
 - call `diagnose` and `stansummary` tools and collect output
 
+The objective is to keep the interface as simple as possible.
+
 # Motivation
 [motivation]: #motivation
 
@@ -111,7 +113,7 @@ code simply won't compile. The resultant tree is an abstraction which
 enables the use of a single type (`CmdStanOutput`) to encapsulate a
 call to an executable.
 
-Unsurprisingly, the argument tree is a syntax tree for `CmdStan`
+Unsurprisingly, the argument tree is a syntax tree for CmdStan
 command arguments. We translate to the very simple command line
 language, but leave open the possibility of translation to other
 languages.
@@ -137,21 +139,30 @@ digit   -> "0" | ... | "9"
 
 value   -> number | path
 ```
-Where the productions for `number` and `path` are left out for brevity.
-The start symbol is `tree`. Generate the command line statement by
-folding the tree from left to right by generating the appropriate term
-from each node. 
+Where the productions for `number` and `path` are left out for
+brevity.  The start symbol is `tree`. Generate the command line
+statement by folding the tree from left to right by generating the
+appropriate term from each node, building up a linear argument list.
+I sketched
+[this](https://github.com/andrewjradcliffe/cmdstan-translator/blob/main/translate.scm)
+out in Scheme, why I am not sure.
 
 ### Ergonomics
 
-The builder pattern will be implemented for each `struct`, and for
-each `enum` variant (excluding unit variants). This
-enables the user to supply only the arguments for which they desire
-non-default values. Philosophy: pay (in LOC) for only what you need.
+Philosophy:
+- pay (in LOC) for only what you need.
+- minimize differences between naming of the types and fields (see
+  below) in the Rust implementation and CmdStan.
 
-There is an incidental benefit (from my perspective) afforded by the
-strongly-typed representation: with
-[company-mode](https://github.com/company-mode/company-mode) and
+The builder pattern will be implemented for each `struct`, and for
+each `enum` variant (excluding unit variants). This enables the user
+to supply only the arguments for which they desire non-default
+values. This leads to succinct code when one needs only the defaults
+([example](https://github.com/andrewjradcliffe/cmdstan-rs/blob/main/examples/bernoulli-many/main.rs)).
+
+#### A side effect of strong typing
+
+With [company-mode](https://github.com/company-mode/company-mode) and
 [eglot-mode](https://github.com/joaotavora/eglot)
 ([lsp-mode](https://github.com/emacs-lsp/lsp-mode/) also works) in
 Emacs 28.2, one can view options at each node in the argument tree by
@@ -171,14 +182,15 @@ The objective is for the interface to cover all options which can be
 passed to a compiled Stan program, that is, all methods and all
 options for said methods.
 
-
 ## Separation of concerns
 
 Other than the argument tree support, the interface proposed is very
 simple: the user can compile a Stan program, call it with arguments,
 get basic information from the output, and call
-`diagnose`/`stansummary`. Below, I provide the rationale for exclusion
-of two aspects.
+`diagnose`/`stansummary`.
+
+Below, I provide the rationale for exclusion of two aspects. My
+judgment is that they are useful, but are best developed separately.
 
 ### Serialization
 
@@ -231,3 +243,106 @@ ever.
 The current proposal is for `CmdStanOutput` to be capable of returning
 paths to the files and the user parses them however they desire.
 This leaves open the possibility of multiple parsing strategies.
+
+# Drawbacks
+[drawbacks]: #drawbacks
+
+Representing CmdStan arguments/options as a concrete syntax tree is
+potentially brittle. If the CmdStan grammar undergoes radical change,
+this interface will need to change accordingly. However, the CmdStan
+grammar is intended to be quite stable. Moreover, it is not
+necessarily the case that radical changes to the CmdStan grammar could
+be hidden behind something other abstraction.
+
+# Rationale and alternatives
+[rationale-and-alternatives]: #rationale-and-alternatives
+
+Other than the direct representation of the CmdStan syntax tree, the
+proposal contains nothing new. Utilizing a concrete representation of
+the syntax tree does have benefits:
+- all outputs handled via single type `CmdStanOutput`
+- elimination of individual structures and methods for each of Stan's
+inference algorithms
+
+The question remains: is this is a good idea?
+
+## Argument tree considerations
+
+As described above, the grammar for CmdStan arguments passed at the
+command line can be represented as a syntax tree through the use of
+sum and product types.
+- This enables compile-time validation of argument consistency -- the
+  worst that can happen is you provide a value that CmdStan does not
+  like (e.g. `num_threads=-20`).
+- At minimum, this will move a variety of run-time errors to compile
+  time; it might even help users to understand the methods and options
+  CmdStan provides.
+- This enables re-use of a parameterized argument tree -- one could
+  replace the inference method while leaving the other options
+  (e.g. data files) constant. As shown in [this
+  example](https://github.com/andrewjradcliffe/cmdstan-rs/blob/main/examples/bernoulli-many/main.rs),
+  such an approach can be quite expressive.
+
+Furthermore, representation as a concrete syntax tree enables the
+possibility of interesting features. One could parse the syntax tree
+from:
+- a string written to a log file
+- a string which is consistent with the grammar that CmdStan accepts
+
+The latter is interesting in that a user's extant command line input
+is all that is required to use the Rust interface. For example,
+this leads to the following syntax:
+
+```rust
+// Assuming we implemented this through the `FromStr` trait
+let tree: ArgumentTree = "method=sample data file=bernoulli.data.json".parse().unwrap();
+```
+
+This would substantially lower the barrier to adoption of the Rust
+interface as the user need only know what they are already doing.
+
+Due to Rust's orphan rules, such features would need to be implemented
+within this crate; they could be placed behind a feature gate to
+minimize compile time. It stands to reason that if we can translate to
+a string, we should be able to perform the inverse operation.
+
+The design philosophy here would be: a valid parse is whatever CmdStan
+is willing to accept. However, CmdStan accepts some weird statements.
+For example:
+```bash
+./bernoulli method=sample adapt engaged engaged=0 engaged engaged=1 gamma engaged gamma \
+    data filebernoulli.data.json
+```
+
+The proposal is to use [pest](https://github.com/pest-parser/pest),
+rather than write a custom parser.
+
+# Prior art
+[prior-art]: #prior-art
+
+I have used both the with CmdStanPy and the StanJulia suite of
+packages.  Years ago, I found them convenient.
+
+## Flat structure
+
+Both CmdStanPy and StanJulia pursue a flat structure. This works
+largely due to the provision of optional positional/keyword arguments
+in a dynamic language.
+
+This is not possible in Rust -- default values require the builder
+pattern in order to be ergonomic.
+
+## Naming
+
+The difference between naming of arguments/options in CmdStan and
+(CmdStanPy | StanJulia) can be a source of confusion. I suppose that
+one would not have this problem if one never used CmdStan.
+
+## Serialization/deserialization of inputs/outputs
+
+Undoubtedly, both CmdStanPy and the Julia suite are targeted at the
+dynamic language audience, which expects features such as
+serialization/deserialization to be built in.  In general, I would
+expect that Rust programmers would probably want to select their own
+I/O options, thus, I do not see it as a downside to exclude such
+features.
