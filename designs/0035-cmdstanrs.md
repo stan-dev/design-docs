@@ -311,7 +311,7 @@ is willing to accept. However, CmdStan accepts some weird statements.
 For example:
 ```bash
 ./bernoulli method=sample adapt engaged engaged=0 engaged engaged=1 gamma engaged gamma \
-    data filebernoulli.data.json
+    data file=bernoulli.data.json
 ```
 
 The proposal is to use [pest](https://github.com/pest-parser/pest),
