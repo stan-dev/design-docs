@@ -194,14 +194,14 @@ data {
 
 transformed data {
  // Data will use the validate() function from the user-defined constraint
- real<udf=upper_bound(u_bound)> a_validated;
+ real<udc=upper_bound(u_bound)> a_validated;
 }
 
 
 parameters {
  // User-defined constraint applied to parameters alpha and b
- real<udf=upper_bound(u_bound)> alpha;
- vector<udf=upper_bound(u_bound)> b;
+ real<udc=upper_bound(u_bound)> alpha;
+ vector<udc=upper_bound(u_bound)> b;
  // In these cases this is the same as calling
  // real<upper=u_bound> alpha;
  // vector<upper=u_bound>[N] b;
