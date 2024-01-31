@@ -4,7 +4,7 @@
 # Summary
 [summary]: #summary
 
-Adding a `jacobian` target that increments the log of the absolute value of the determinant of the Jacobian will allow users to implement their own constraints within a stan program. The `jacobian` target will be accessible directly in `transformed parameters` and a new `constraints` block where users can define custom constraints similar to Stan's already existing constrained data types. The below examples show the main use cases.
+This design doc proposes adding a `jacobian` target and a new block for user defined constraints. The `jacobian` target will be accessible directly in `transformed parameters` and a new `constraints` block where users can define custom constraints similar to Stan's already existing constrained data types. The below examples shows an example use case.
 
 ```stan
 constraints {
