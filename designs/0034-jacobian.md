@@ -30,18 +30,20 @@ constraints {
 data {
  real lb;
  real ub;
+ int N;
 }
 parameters {
  //(2) User defined constraint
- upper_bound<ub=ub> b_raw;
+ real<udc=upper_bound(ub)> b;
+ vector<udc=upper_bound(ub)>[N] b_vec;
  real c_raw;
 }
 transformed parameters {
  // (3) Transform and accumulates like stan math directly
- real b = exp(b_raw) + lb;
+ real c = exp(c_raw) + lb;
  // Underneath the hood, only actually calculated if
  // Jacobian bool template parameter is set to true
- jacobian += b_raw;
+ jacobian += c_raw;
 }
 ```
 
@@ -51,11 +53,11 @@ transformed parameters {
 Given a function mapping $c$ that transforms a set of parameters from the unconstrained space $Y$ to the constrained space $X$, probability density function $\pi$, and a Jacobian determinant function over the constrained space $J(c(y))$, Stan calculates the log transformed density function [2]
 
 $$
-\pi^*(y) = \pi\left( c\left(y\right) \right) J(c\left(y\right)) 
+\pi^*(y) = \pi\left( c\left(y\right) \right) J(c\left(y\right))
 $$
 
 $$
-\log\left(\pi^*(y)\right) = \log\left(\pi\left( c\left(y\right) \right)\right) + \log\left(J(c\left(y\right)\right)) 
+\log\left(\pi^*(y)\right) = \log\left(\pi\left( c\left(y\right) \right)\right) + \log\left(J(c\left(y\right)\right))
 $$
 
 In a Stan program, $ \log\left(J(c\left(y\right)\right))$ is handled via the Stan languages defined constraints such as `lower`, `upper`, `ordered`, and others.
