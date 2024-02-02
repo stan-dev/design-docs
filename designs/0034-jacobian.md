@@ -63,7 +63,7 @@ transformed parameters {
 # Motivation
 [motivation]: #motivation
 
-Given a function $c$ mapping unconstrained parameters in $Y$ to constrained parameters in $X$, probability density function $\pi$, and a Jacobian determinant function over the constrained space $J(c(y))$, Stan calculates the log transformed density function [2]
+Given a function $c$ mapping unconstrained parameters in $Y$ to constrained parameters in $X$, probability density function $\pi$, and a Jacobian determinant function over the constrained space $J(c(y))$, Stan calculates the log transformed density function [1]
 
 $$
 \pi^*(y) = \pi\left( c\left(y\right) \right) J_c\left(y\right)
@@ -87,7 +87,7 @@ This is very nice for both parties since it is both of their preferred spaces to
 
 Most of the time this encapsulation is very good. 
 The main issue is that Stan users either have to write code that either only uses Stan's built-in transforms to stay in the constrained space or works directly on the unconstrained space. 
-For instance, from a comment [3] by @betanalpha (slightly commented and fleshed out)
+For instance, from a comment [2] by @betanalpha (slightly commented and fleshed out)
 
 -----------
 
@@ -153,7 +153,8 @@ The first argument for all functions defined in a constraint must be the argumen
 - `unconstrain(TransformType, OtherArguments...) -> ReturnType`: Transforms a real constrained variable back to the unconstrained space.
 - `validate(TransformType, OtherArguments...) -> ReturnType`: Validates a real variable against the constraint, returning 1 if valid and 0 otherwise.
 
-The pseudocode below shows the structure of a user defined constrained. All CamelCase names are to be replaced by the user.
+The pseudocode below shows the structure of a user defined constrained.
+All CamelCase names are to be replaced by the user.
 
 - `ConstraintName`: The name of the constraint which will be called by users from within the `<>` of Stan's [data types](https://mc-stan.org/docs/reference-manual/overview-of-data-types.html).
 - `ReturnType`: A Stan data type that is the return type of the function
@@ -189,11 +190,14 @@ constraints {
 
 ### Using the jacobian Keyword
 
-The `jacobian` keyword is introduced within the `constraint` block to allow the Jacobian accumulator to be incremented by the log absolute determinant of the Jacobian of the constraining transform. This keyword behaves similarly to the `target` keyword, allowing users to account for the change of variables in the probability density function. The `jacobian` keyword is available in both the `constraints` block and the `transformed parameters` block.
+The `jacobian` keyword is introduced within the `constraint` block to allow the Jacobian accumulator to be incremented by the log absolute determinant of the Jacobian of the constraining transform. 
+This keyword behaves similarly to the `target` keyword, allowing users to account for the change of variables in the probability density function. 
+The `jacobian` keyword is available in both the `constraints` block and the `transformed parameters` block.
 
 ### Declaring Variables with User-defined Constraints
 
-Variables can be declared with user-defined constraints in the data, transformed data, parameters, transformed parameters, and generated quantities blocks. The syntax for declaring a variable with a user-defined constraint is as follows:
+Variables can be declared with user-defined constraints in the data, transformed data, parameters, transformed parameters, and generated quantities blocks. 
+The syntax for declaring a variable with a user-defined constraint is as follows:
 
 ```stan
 type<constraint constraint_name(args...)> variable_name;
@@ -248,7 +252,8 @@ parameters {
 }
 ```
 
-In this example, `upper_bound` is a user-defined constraint that is applied to the data and parameters. The `validate()` function from `upper_bound` is used to validate `a_validated` in the `transformed data` block, and the transformations defined in `upper_bound` are applied to `alpha` and `b` in the parameters block.
+In this example, `upper_bound` is a user-defined constraint that is applied to the data and parameters.
+The `validate()` function from `upper_bound` is used to validate `a_validated` in the `transformed data` block, and the transformations defined in `upper_bound` are applied to `alpha` and `b` in the parameters block.
 
 ### Error Messages
 
@@ -258,7 +263,8 @@ Inside of a constraint, if a `constrain` function is defined then an `unconstrai
 constraint(vector x, real upper_bound) for {CONSTRAINT_NAME} does not have an associated `unconstrain(vector x, real upper_bound)`. If you define one then you must define both!
 ```
 
-If a user defined constraint type is used in `data`, `transformed data`, or `transformed parameters`, or `generated quantities` then the constraint must have a validate function for that given type. For example, if a user calls a constraint named `lower_bound` tha does not have a `validate()` function then the error message will look like:
+If a user defined constraint type is used in `data`, `transformed data`, or `transformed parameters`, or `generated quantities` then the constraint must have a validate function for that given type. 
+For example, if a user calls a constraint named `lower_bound` tha does not have a `validate()` function then the error message will look like:
 
 ```
 // vector<constrain lower_bound(lb)> x;
@@ -269,9 +275,13 @@ a `lower_bound` constraint was given to `x`, but `lower_bound` does not have a v
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-The first thing we would do is add the `jacobian` keyword to the Stan language. Like `target`, `jacobian` would only be available on the left hand side of statements to be accumulated into. Its domain is restricted to the `transformed parameters` and `constraints` block.
+The first thing we would do is add the `jacobian` keyword to the Stan language. 
+Like `target`, `jacobian` would only be available on the left hand side of statements to be accumulated into. 
+Its domain is restricted to the `transformed parameters` and `constraints` block.
+The main difference between `jacobian` and `target` is that the jacobian accumulation is optional for Stan algorithms. If an algorithm wants to do something like maximum likelihood estimation then it is possible to turn off the Jacobian accumulation.
 
-This section will break down the model given in the summary section to show what the Stan compiler requires piece by piece. First, let's look at the `constraints` block where we define our constrain and unconstrain functions
+This section will break down the model given in the summary section to show what the Stan compiler requires piece by piece. 
+First, let's look at the `constraints` block where we define our constrain and unconstrain functions
 
 ## Constraint Block
 
@@ -294,7 +304,8 @@ constraints {
 }
 ```
 
-The new `constraints` block will need to be added to the compiler's parser, validator, mir, and c++ mir. The parser will transpile each of the constraints to c++ functions which start with the name of the constraint. For the example above the signatures would be
+The new `constraints` block will need to be added to the compiler's parser, validator, Middle Implementation Layer (MIR), and c++ MIR. 
+The parser will transpile each of the constraints to c++ functions which start with the name of the constraint. For the example above the signatures would be
 
 ```c++
 upper_bound_constrain__(...)
@@ -302,26 +313,28 @@ upper_bound_unconstrain__(...)
 upper_bound_validate__(...)
 ```
 
-The only function of the three listed above that has rules that differ from standard function generation is the `*_constrain` function which has an additional `jacobian` argument and `Jacobian` template parameter. The jacobian is kept behind an if statement that checks the compile time value `Jacobian` before incrementing the jacobian. Besides the jacobian argument the rest of the function will parse exactly like a standard function.
+The only function of the three listed above that has rules that differ from standard function generation is the `*_constrain` function which has an additional `jacobian` argument and `Jacobian` template parameter. 
+The jacobian is kept behind an if statement that checks the compile time value `Jacobian` before incrementing the jacobian. 
+Besides the jacobian argument the rest of the function will parse exactly like a standard function.
 
 ```c++
 template <bool Jacobian, typename T1, typename T2, typename TJacobian>
 return_type_t<T1, T2> upper_bound_constrain(const T1& x, const T2& upper_bound,
   TJacobian& jacobian) {
  if (Jacobian) {
-   // If x is a vector we can
-   //  wrap the right hand side in a sum()
    jacobian += x;
  }
  return subtract(upper_bound, exp(x));
 }
 ```
 
-The `_unconstrain` function will not be used directly by the user and instead will be used internally in the Stan model class when we need to go from the constrained to unconstrained space. The code generation for these will be the same as a standard function.
+The `_unconstrain` function will not be used directly by the user and instead will be used internally in the Stan model class when we need to go from the constrained to unconstrained space. 
+The code generation for these will be the same as a standard function.
 
 ## Transformed Parameters
 
-Inside of transformed parameters we expose `jacobian` like in the functions section listed below. Any jacobian accumulation will be wrapped in an `if (Jacobian)` so that the Jacobian increment only happens when requested.
+Inside of transformed parameters we expose `jacobian` like in the functions section listed below. 
+Any jacobian accumulation will be wrapped in an `if (Jacobian)` so that the Jacobian increment only happens when requested.
 
 ```stan
 parameters {
@@ -346,7 +359,8 @@ transformed parameters {
 
 - Why is this design the best in the space of possible designs?
 
-The other alternative is to not have a new block and have users define `*_constrain`, `*_unconstrain`, and `*_validate` functions in the `functions` block. This might be easier to implement, but it is not as nice looking as a new constraints block.
+The other alternative is to not have a new block and have users define `*_constrain`, `*_unconstrain`, and `*_validate` functions in the `functions` block. 
+This might be easier to implement, but having raw functions makes the constraints scheme removes localization and encapsulation which I think is a lot nicer.
 
 - What is the impact of not doing this?
 
