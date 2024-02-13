@@ -41,7 +41,8 @@ $$
 \log\left(\pi^*(y)\right) = \log\left(\pi\left( c\left(y\right) \right)\right) + \log\left(J_c\left(y\right)\right)
 $$
 
-The Stan languages has built in constraints constraints such as `lower`, `upper`, `ordered`, etc. to handle $ \log\left(J_c(y)\right)$. A variable (unconstraining) transform is a surjective function $f:\mathcal{X} \rightarrow \mathbb{R}^N$ from a constrained subset $\mathcal{X} \subseteq \mathbb{R}^M$ onto the full space $\mathbb{R}^N$.
+The Stan languages has built in constraints constraints such as `lower`, `upper`, `ordered`, etc. to handle $ \log(J_c(y))$. 
+A variable (unconstraining) transform is a surjective function $f:\mathcal{X} \rightarrow \mathbb{R}^N$ from a constrained subset $\mathcal{X} \subseteq \mathbb{R}^M$ onto the full space $\mathbb{R}^N$.
 The inverse transform $f^{-1}$ maps from the unconstrained space to the constrained space. 
 Let $J$ be the Jacobian of $f^{-1}$ so that $J(x) = (\nabla f^{-1})(x).$ and $|J(x)|$ is its absolute Jacobian determinant. A transform in Stan specifies 
 
@@ -153,6 +154,18 @@ transformed parameters {
 
 Functions ending in `_jacobian` will operate the same as `_lp` functions, but instead of exposing `target` they will expose `jacobian`.
 
+The generated C++ will reuse a lot of the code from generating the `_lp` functions and will look something like this
+
+```c++
+template <bool Jacobian, typename T1, typename T2, typename TJacobian>
+auto foo(const T1& x, const T2& ub, TJacobian& jacobian__) {
+  if (Jacobian) {
+    jacobian__ += x //...;
+  }
+  return ub - exp(x);
+}
+```
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
@@ -162,6 +175,12 @@ Functions ending in `_jacobian` will operate the same as `_lp` functions, but in
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
+
+- Alternatives
+
+An alternative to this approach would be the `constraints` block as defined in the git history of this proposal's branch. 
+That allows for user defined constraints directly in the parameters block.
+
 
 - What is the impact of not doing this?
 
