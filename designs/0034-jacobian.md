@@ -31,23 +31,23 @@ transformed paramters {
 # Motivation
 [motivation]: #motivation
 
-Given a function $c$ mapping unconstrained parameters in $Y$ to constrained parameters in $X$, probability density function $\pi$, and a Jacobian determinant function over the constrained space $J(c(y))$, Stan calculates the log transformed density function [1]
+Given a function $c$ mapping unconstrained parameters in $Y$ to constrained parameters in $X$, probability density function $\pi$, and a Jacobian determinant function over the constrained space $|J_c(y)|$, Stan calculates the log transformed density function [1]
 
 $$
-\pi^*(y) = \pi\left( c\left(y\right) \right) J_c\left(y\right)
+\pi^*(y) = \pi\left( c\left(y\right) \right) |J_c\left(y\right)|
 $$
 
 $$
-\log\left(\pi^*(y)\right) = \log\left(\pi\left( c\left(y\right) \right)\right) + \log\left(J_c\left(y\right)\right)
+\log\left(\pi^*(y)\right) = \log\left(\pi\left( c\left(y\right) \right)\right) + \log\left(|J_c\left(y\right)\right|)
 $$
 
-The Stan languages has built in constraints constraints such as `lower`, `upper`, `ordered`, etc. to handle $\log(J_c(y))$. 
+The Stan languages has built in constraints constraints such as `lower`, `upper`, `ordered`, etc. to handle $\log(|J_c(y)|)$. 
 A variable (unconstraining) transform is a surjective function $f:\mathcal{X} \rightarrow \mathbb{R}^N$ from a constrained subset $\mathcal{X} \subseteq \mathbb{R}^M$ onto the full space $\mathbb{R}^N$.
 The inverse transform $f^{-1}$ maps from the unconstrained space to the constrained space. 
 Let $J$ be the Jacobian of $f^{-1}$ so that $J(x) = (\nabla f^{-1})(x).$ and $|J(x)|$ is its absolute Jacobian determinant. A transform in Stan specifies 
 
 - $f(y)$ The unconstraining transform
-- $f^{-1}\left(y\right)$ The inverse unconstraining transform
+- $f^{-1}\left(y\right)$ The constraining transform
 - $\log |J(y)|$ The log absolute Jacobian determinant function for $f^{-1}$ chosen such that the resulting distribution over the constrained variables is uniform
 - $V(y)$ that tests that $x \in \mathcal{X}$ (i.e., that $x$ satisfies the constraint defining $\mathcal{X}$).
 
