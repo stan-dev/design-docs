@@ -102,20 +102,20 @@ low-level parameters of a hierarchical model, with the population
 parameters being sampled with block Gibbs.  In a simple case, suppose
 we have a model with $N$ binary observations in $K$ groups with group
 indicator $\text{group}$.  The likelihood will be $y_n \sim
-\text{bernoulli}(\textrm{logit}^{-1}(\alpha_{\text{group}_n}))$ and
-the prior $\alpha_k \sim \textrm{normal}(mu, \sigma)$ with conjugate
+\text{bernoulli}(\textrm{logit}^{-1}(\alpha_{\text{group}[n]}))$ and
+the prior $\alpha_k \sim \textrm{normal}(\mu, \sigma)$ with conjugate
 priors $\sigma^2 \sim \textrm{invGamma}(a, b)$ and $\mu \sim
 \textrm{normal}(0, \sigma)$.
 
 We can use conjugacy to define the posterior for the hyperpriors $\mu,
 \sigma^2$ analytically given $\alpha$,
 
-$\sigma^2 \sim \text{invGamma}(a + K/2, b + \text{sum}(alpha - \bar{\alpha}) / 2 + K \cdot \bar{alpha} / (2 \cdot (K + 1))),$
+$\sigma^2 \sim \text{invGamma}(a + K/2, b + \text{sum}(\alpha - \widebar{\alpha}) / 2 + K \cdot \widebar{\alpha} / (2 \cdot (K + 1))),$
 
-where $\bar{alpha} = \text{mean}(\alpha)$.  The conjgate posterior for
+where $\widebar{\alpha} = \text{mean}(\alpha)$.  The conjgate posterior for
 $\mu$ given $\alpha$ and $\sigma^2$ is
 
-$\mu \sim \text{normal}(K \cdot \bar{\alpha} / (K + 1), \sigma /
+$\mu \sim \text{normal}(K \cdot \widebar{\alpha} / (K + 1), \sigma /
 \sqrt{K + 1}),$
 
 where as usual, we are parameterizing the normal distribution by its scale.
@@ -194,7 +194,7 @@ unduly distorting the kinetic model.
 
 The simplest example of cut would assume we have some calibration data
 for sensitivity $(N^\text{sens}, n^\text{sens})$ and for specificity
-$(N^\text{spec}, N^\test{spec})$, which we can model as binomial, e.g.,
+$(N^\text{spec}, N^\text{spec})$, which we can model as binomial, e.g.,
 $n^\text{sens} \sim \textrm{binomial}(\textit{sens}, N^\text{sens})$,
 where $\textit{sens} \in (0, 1)$ is the sensitivity parameter.
 
