@@ -110,12 +110,12 @@ priors $\sigma^2 \sim \textrm{invGamma}(a, b)$ and $\mu \sim
 We can use conjugacy to define the posterior for the hyperpriors $\mu,
 \sigma^2$ analytically given $\alpha$,
 
-$\sigma^2 \sim \text{invGamma}(a + K/2, b + \text{sum}(\alpha - \widebar{\alpha}) / 2 + K \cdot \widebar{\alpha} / (2 \cdot (K + 1))),$
+$\sigma^2 \sim \text{invGamma}(a + K/2, b + \text{sum}(\alpha - \overline{\alpha}) / 2 + K \cdot \overline{\alpha} / (2 \cdot (K + 1))),$
 
-where $\widebar{\alpha} = \text{mean}(\alpha)$.  The conjgate posterior for
+where $\overline{\alpha} = \text{mean}(\alpha)$.  The conjgate posterior for
 $\mu$ given $\alpha$ and $\sigma^2$ is
 
-$\mu \sim \text{normal}(K \cdot \widebar{\alpha} / (K + 1), \sigma /
+$\mu \sim \text{normal}(K \cdot \overline{\alpha} / (K + 1), \sigma /
 \sqrt{K + 1}),$
 
 where as usual, we are parameterizing the normal distribution by its scale.
