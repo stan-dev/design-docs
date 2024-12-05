@@ -34,7 +34,7 @@ Within the `latent data` block, all variables and functions
 declared in earlier blocks (`functions`, `data`, `transformed data`,
 `parameters`, and `transformed parameters`) will be available.
 Variables declared in the `latent data` block will be visible to
-all later blocks (`model` and `generated quantiries`).
+all later blocks (`model` and `generated quantities`).
 
 The `latent data` block allows access to any function not involving
 the target density, including random number generators. It disallows
@@ -112,7 +112,7 @@ We can use conjugacy to define the posterior for the hyperpriors $\mu,
 
 $\sigma^2 \sim \text{invGamma}(a + K/2, b + \text{sum}(\alpha - \overline{\alpha}) / 2 + K \cdot \overline{\alpha} / (2 \cdot (K + 1))),$
 
-where $\overline{\alpha} = \text{mean}(\alpha)$.  The conjgate posterior for
+where $\overline{\alpha} = \text{mean}(\alpha)$.  The conjugate posterior for
 $\mu$ given $\alpha$ and $\sigma^2$ is
 
 $\mu \sim \text{normal}(K \cdot \overline{\alpha} / (K + 1), \sigma /
@@ -151,7 +151,7 @@ model {
 
 The latent data block takes a posterior draw for `sigma_alpha` and
 `mu_alpha` conditioned on `alpha`, then HMC/NUTS is only used to
-update the low-level paramters `alpha` based on the likelihood and
+update the low-level parameters `alpha` based on the likelihood and
 prior as defined in the model block.
 
 ## Cut and injected randomness
@@ -460,7 +460,7 @@ variables can be reset rather than allocating and freeing each evaluation.
 ### Modified log_prob method
 
 The existing `log_prob` method must be updated to maintain backward
-compatiblity: 
+compatibility: 
 
 ```cpp
 template <bool propto__, bool jacobian__, typename T_> inline T_
@@ -484,7 +484,7 @@ log_prob(
 }
 ```
 
-For ease of backward compatiblity, we can have the old implementation
+For ease of backward compatibility, we can have the old implementation
 with a default value,
 
 ```cpp  
