@@ -1,14 +1,14 @@
-- Feature Name: Generated Data Block
+- Feature Name: Latent Data Block
 - Start Date: 09-30-2024
 
 # Summary
 [summary]: #summary
 
 This design doc proposes adding a new block to the Stan language
-called `generated data` with a range of proposed uses.  The new block
+called `latent data` with a range of proposed uses.  The new block
 will appear between the transformed parameter and model blocks and be
 executed once at the beginning of each iteration using `double` values
-for all parameters and transformed parameters.  The `generated data`
+for all parameters and transformed parameters.  The `latent data`
 variables will then be in scope for the rest of the program, but
 cannot be modified.
 
@@ -25,18 +25,18 @@ The motivation is to support three new key features for Stan:
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-Stan will support a new block, `generated data`, that is required to
+Stan will support a new block, `latent data`, that is required to
 appear between `transformed parameters` and the `model` block.
 Variables may be declared in the same way as for other blocks.  All
 data types are allowed, including integers.
 
-Within the `generated data` block, all variables and functions
+Within the `latent data` block, all variables and functions
 declared in earlier blocks (`functions`, `data`, `transformed data`,
 `parameters`, and `transformed parameters`) will be available.
-Variables declared in the `generated data` block will be visible to
+Variables declared in the `latent data` block will be visible to
 all later blocks (`model` and `generated quantiries`).
 
-The `generated data` block allows access to any function not involving
+The `latent data` block allows access to any function not involving
 the target density, including random number generators. It disallows
 access to the target log density, so the following operations are not
 available: target function `target()`, target increment statement
@@ -62,7 +62,7 @@ parameters {
   vector<lower=0>[2] sigma;        // component scales
   real<lower=0, upper=1> lambda;   // mixture ratio
 }
-generated data {
+latent data {
   // sample z ~ p(z | y, lambda, mu, sigma)
   array[N] int<lower=1, upper=2> z;
   for (n in 1:N) {
@@ -83,14 +83,14 @@ model {
 }
 ```
 
-The `generated data` block does for `z` does not look like the simple
-generative model.  That's because the `generated data` block must code
+The `latent data` block does for `z` does not look like the simple
+generative model.  That's because the `latent data` block must code
 up the conditional distribution of $z$ given $y, \lambda, \mu,$ and
 $\sigma$.  The conditional here requires the same derivation as
 marginalization. 
 
 This is not an efficient way to code this model, but it's the simplest
-possible example of using the `generated data` block for Gibbs
+possible example of using the `latent data` block for Gibbs
 sampling of discrete parameters, such as $z$ in this example.  More
 useful examples might include variable selection with a spike and slab
 prior.
@@ -133,7 +133,7 @@ data {
 parameters {
   vector[K] alpha;
 }
-generated data {
+latent data {
   real alpha_bar = mean(alpha);
   real<lower=0> sigma_alpha
     = sqrt(inv_gamma_rng(a + K / 2,
@@ -141,7 +141,7 @@ generated data {
                            + K * alpha_bar^2 / (2 * (K + 1))));
   real mu_alpha = normal_rng(K * mean(alpha) / (K + 1),
                              sigma_alpha / sqrt(K + 1));
-					  
+                      
 }
 model {
   alpha ~ normal(mu_alpha, sigma_alpha);
@@ -149,14 +149,14 @@ model {
 }
 ```
 
-The generated data block takes a posterior draw for `sigma_alpha` and
+The latent data block takes a posterior draw for `sigma_alpha` and
 `mu_alpha` conditioned on `alpha`, then HMC/NUTS is only used to
 update the low-level paramters `alpha` based on the likelihood and
 prior as defined in the model block.
 
 ## Cut and injected randomness
 
-Here is a simple use case which uses the generated data block to
+Here is a simple use case which uses the latent data block to
 generate random sensitivity and specificity values from a population
 mean and covariance.  The population model is used to generate random
 sensitivity and specificity values per iteration, pushing their
@@ -172,7 +172,7 @@ data {
 parameters {
   real<lower=0, upper=1> prev;
 }
-generated data {
+latent data {
   vector<lower=0, upper=1>[2] sens_spec 
     = inv_logit(multi_normal_rng(loc_ss, Sigma_ss)); 
 }
@@ -214,7 +214,7 @@ parameters {
   real<lower=0, upper=1> sens_cut;
   real<lower=0, upper=1> spec_cut;
 }
-generated data {
+latent data {
   // cuts inference to sens and spec
   real sens = sens_cut;
   real spec = spec_cut;
@@ -269,7 +269,7 @@ parameters {
   real<lower=0> sigma;
   
 }
-generated data {
+latent data {
   vector[N] x1 = x1_obs, x2 = x_obs;
   for (n in 1:N) {
     if (missing1[n]) {
@@ -314,7 +314,7 @@ model {
 ```
 
 We can move to stochastic gradient descent by randomly subsampling `y`
-in the `generated data` block.  As we do this, it's traditional to
+in the `latent data` block.  As we do this, it's traditional to
 scale the likelihood to match the original data size.
 
 
@@ -332,7 +332,7 @@ transformed data {
 parameters {
   real<lower=0, upper=1> theta;
 }
-generated data {
+latent data {
   array[N_sub] y_sub;
   for (n in 1:N_sub) {
     y_sub[n] = categorical_rng(unif);
@@ -350,22 +350,163 @@ quasi-Newton steps using stochastic gradient.
 
 
 # Reference-level explanation
-[reference-level-explanation]: #reference-level-explanation
+[reference-level-explanation]: #reference-level-explanation 
 
-The `generated data` block will be executed in exactly the same way as
-the `generated quantities` block, i.e., with all previous variables
-coded as double precision floating point and single-precision integer
-types.
+## Stan Reference Manual
 
-Like all of the other blocks, variables from previous blocks will be
-available in the `generated data` block, and variables from the
-`generated data` block will be available in all subsequent blocks.
+Stan's block structure and execution model is described in the
+reference manual in the
+[Program Blocks chapter](https://mc-stan.org/docs/reference-manual/blocks.html)
+and the
+[Program Execution chapter](https://mc-stan.org/docs/reference-manual/execution.html).
+This feature will add a new section to the program blocks chapter,
+which will read as follows.
+
+### Program Blocks for latent data
+
+The latent data block appears after the transformed parameters block
+but before the odel block.  Like the parameters, transformed
+parameters, and generated quantities, the latent data will be included
+in the output and the top-level variables will be available in all
+later blocks.  Latent data will also have access to the data,
+transformed data, parameters, and transformed parameters.
+
+#### Iteration number 
+
+The iteration number can be optionally set in the latent data block 
+from the outside.  There will be an `iteration_number__` parameter 
+reserved.  It will be set to 0 by default, but can be updated by an 
+external algorithm. 
+
+### Program Execution for latent data
+
+For all of our inference algorithms (HMC, ADVI, Pathfinder,
+optimization, Laplace), the latent data block should be executed once
+at the start of each iteration.  For example, in Hamiltonian Monte
+Carlo, the latent data block is executed once based on the initial
+parameter values, then the values are used without changing each
+leapfrog iteration.  For optimization, each iteration of L-BFGS should
+evaluate the latent data block once per iteration and leave it fixed
+through the line search. The latent data needs to be executed before
+the model block.
+
+By default, the latent data block will be empty and there will be
+nothing to compute.  This should be possible to set up so that all of
+the inference methods are backwards compatible.
+
+As with blocks other than the parameters block, any constraints on the
+declared variables will be checked at the end of the block and an
+exception will be raised if they are violated, which will cause the
+current iteration in any of the algorithms to be rejected.
+
+## C++ model class  
+
+The `latent data` block will be executed with primitive (`double` and
+`int` in C++) variables, just like the `generated quantities` block.
+This effectively "cuts" the gradient information from propagating back
+through the latent data block.  Nevertheless, computation in the
+latent data block can affect what happens in the model block by
+defining new variables on which the model block may condition.
+
+### Representing the latent data
+
+The design is based on an object-based representation of the latent
+data using code generation.  For example, suppose the latent data
+block is defined as follows.
+
+
+```cpp
+latent data {
+  real<lower=0, upper=1> sens = beta_rng(98, 2);
+  real<lower=0, upper=1> spec = beta_rng(95, 5);
+}
+```
+
+This will lead to the code generation of a class in the generated
+`.hpp` file for the model.
+
+```cpp
+struct LatentData {
+  int iteration_number__;  // included by default in all LatentData
+  double sens;
+  double spec;
+};
+```
+
+### Generating the latent data
+
+An additional method in the model class will be required to populate 
+the latent data. 
+
+```cpp
+template <typename RNG> inline void
+latent_data(
+    const VectorXd& params_r,
+    LatentData& latent_data__,
+    RNG& base_rng,
+    int iteration = -1,
+    std::ostream* pstream=nullptr) const {
+  latent_data__.iteration_number__ = iteration;
+  ... code generated to populate latent_data__ ...
+}
+```
+
+The context will be responsible for managing the memory of any data  
+structures in LatentData, such as `Eigen::Matrix` or `std::vector`
+instances. By reusing the same `LatentData` variable (per thread),
+variables can be reset rather than allocating and freeing each evaluation.
+
+
+### Modified log_prob method
+
+The existing `log_prob` method must be updated to maintain backward
+compatiblity: 
+
+```cpp
+template <bool propto__, bool jacobian__, typename T_> inline T_
+log_prob(Eigen::Matrix<T_,-1,1>& params_r, 
+         const LatentData& latent_data__,
+         std::ostream* pstream = nullptr) const;
+```
+
+In this case, the `log_prob` code generation must be updated to copy
+all of the generated data into scope.
+
+```cpp
+template <bool propto__, bool jacobian__, typename T_> inline T_ 
+log_prob(
+    Eigen::Matrix<T_,-1,1>& params_r,  
+    const LatentData& latent_data  , 
+    std::ostream* pstream = nullptr) const {
+  double sens = latent_data__.sens;
+  double spec = latent_data__.spec;
+  ... code generate as before with sens/spec in scope ...
+}
+```
+
+For ease of backward compatiblity, we can have the old implementation
+with a default value,
+
+```cpp  
+template <bool propto__, bool jacobian__, typename T_> inline T_ 
+log_prob(
+    Eigen::Matrix<T_,-1,1>& params_r,  
+    std::ostream* pstream = nullptr) const {
+  LatentData latent_data,
+  return log_prob(params_r, latent_data, pstream) const;
+```
+
+### BridgeStan
+
+BridgeStan can be updated to mimic the updates to the Stan model
+class.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
 1. It will require additional documentation and tests, increasing
-   Stan's long-term maintenance burden. 
+   Stan's long-term maintenance burden and the overhead required for
+   someone to understand what it's doing. 
 2. Using "cut"-based inference does not perform full Bayesian
    inference, and there's a risk that this will confuse our users. 
 3. Using this block for Gibbs sampling will be less efficient than
@@ -374,7 +515,7 @@ available in the `generated data` block, and variables from the
 4. There is nothing enforcing consistency of the conditional
    distributions when doing Gibbs, so this will be easy to get wrong
    and there won't be an easy way to test that this is right.
-5.  Introducing a `generated data` opens up a back door approach to
+5.  Introducing a `latent data` block opens up a back door approach to
     converting real numbers to integers, which can be done with
     `to_int(data real)` if the argument is "data" (i.e., a primitive
     rather than autodiff variable). 
@@ -395,11 +536,14 @@ inference.
 ## Impact of not implementing
 
 Users will find it impossible to do discrete sampling that interacts
-with the model and will find it very challenging to do imputation. 
+with the model and will find it very challenging to do missing data
+imputation.  
 
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
+
+None known.
 
 
 # Citations
