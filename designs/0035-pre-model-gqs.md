@@ -17,9 +17,10 @@ cannot be modified.
 
 The motivation is to support three new key features for Stan:
 
-* Cut-based reasoning for random quantities 
+* Gibbs sampling discrete (or continuous) parameters 
+* Naive cut-based reasoning for random quantities 
 * Multiple imputation of missing data
-* Gibbs sampling discrete parameters
+* Stochastic gradient descent optimization and MCMC
 
 
 # Guide-level explanation
@@ -45,6 +46,11 @@ functions ending in `_lp`.
 
 
 ## Gibbs sampling discrete parameters
+
+Currently, the only approach to discrete parameters that Stan supports
+is marginalization.  With this proposal, we will be able to introduce
+general Gibbs sampling a the cost of users having to write their own
+conditional densities.
 
 Here's an example that encodes a normal mixture model by sampling
 discrete parameters. The generative process for a data item first
@@ -95,12 +101,13 @@ sampling of discrete parameters, such as $z$ in this example.  More
 useful examples might include variable selection with a spike and slab
 prior.
 
-## Block Gibbs for hierarchical models
+## Block Gibbs sampling continuous parameters
 
 Neal (2011, p. 143) proposes a scheme whereby HMC is only used for the
 low-level parameters of a hierarchical model, with the population
-parameters being sampled with block Gibbs.  In a simple case, suppose
-we have a model with $N$ binary observations in $K$ groups with group
+parameters being sampled with block Gibbs (i.e., sampled all at once
+conditionally as a multivariate block).  In a simple case, suppose we
+have a model with $N$ binary observations in $K$ groups with group
 indicator $\text{group}$.  The likelihood will be $y_n \sim
 \text{bernoulli}(\textrm{logit}^{-1}(\alpha_{\text{group}[n]}))$ and
 the prior $\alpha_k \sim \textrm{normal}(\mu, \sigma)$ with conjugate
@@ -154,25 +161,36 @@ The latent data block takes a posterior draw for `sigma_alpha` and
 update the low-level parameters `alpha` based on the likelihood and
 prior as defined in the model block.
 
-## Cut and injected randomness
+## Multiple imputation and injected randomness
 
-Here is a simple use case which uses the latent data block to
-generate random sensitivity and specificity values from a population
-mean and covariance.  The population model is used to generate random
-sensitivity and specificity values per iteration, pushing their
-uncertainty through the model based inferences.
+### Injected randomness
+
+The idea of *multiple imputation* is to sequence two models, using the
+posterior from one as data for the next.  This is not a fully Bayesian
+model, but is popular in some application areas for reasons described
+in the next section.
+
+Suppose, for the sake of example, that we've fit a model for the
+sensitivity and specificity of a diagnostic test, such as a PCR test
+for SARS-Cov-2.  This gives us posterior multivariate normal
+distribution with a mean and covariance of the log odds.  We can
+sample those each iteration in the latent data block to propagate
+uncertainty in the sensitivity and specificity to estimates of
+prevalence as follows.
+
 
 ```stan 
 data {
-  vector[2] loc_ss; 
-  cov_matrix[2, 2] Sigma_ss; 
-  int<lower=0> N; 
-  int<lower=0, upper=N> n; 
+  vector[2] loc_ss;           // mean sens/spec
+  cov_matrix[2, 2] Sigma_ss;  // covar of spens/spec
+  int<lower=0> N;             // total tests
+  int<lower=0, upper=N> n;    // positive tests
 }
 parameters {
   real<lower=0, upper=1> prev;
 }
 latent data {
+  // generate new sens/spec values for this iteration	
   vector<lower=0, upper=1>[2] sens_spec 
     = inv_logit(multi_normal_rng(loc_ss, Sigma_ss)); 
 }
@@ -185,18 +203,68 @@ model {
 }
 ```
 
-This is related to "cut" in Gibbs sampling (Plummer 2015), which
-restricts the flow of information during parameter inference.  Cut is
-popular in pharmacometric modeling when the pharmacokinetic model is
-well understood and well specified, but the pharmacodynamic model is
-less well understood, because it prevents the dynamics model from
-unduly distorting the kinetic model.
+If each conditional draw from HMC is exact in sampling `prev`, then  
+this will give us the same answer as so-called *multiple imputation*.  
+Note that multiple imputation can be implemented directly in Stan by  
+running the sampler with multiple data sets and combining the  
+results. 
+
+Using a point estimate for sensitivity and specificity would
+underestimate overall uncertainty.  The approach above pushes the
+uncertainty in the the sensitivity and specificity estimates through
+the estimates of prevalence.  But it is not equivalent to the full
+Bayesian model that fits sensitivity and specificity jointly with
+prevalence.  
+
+
+### "Cut" inference a la BUGS
+
+The BUGS software package for (generalized) Gibbs sampling introduces
+a so-called "cut" operator (Plummer 2015).  The purpose of cut is to
+block information from percolating to places where it would disrupt
+good fits from other data.  To use the generic case from Plummer
+(2015), suppose we have unknowns $\phi, \theta$ and observed data
+variables $z, y$ with joint model
+
+$p(y, z, \theta, \phi) = p(y \mid \theta, \phi) \cdot p(z \mid \phi)
+\cdot p(\phi, \theta),$
+
+which has a posterior density
+
+$p(\theta, \phi \mid y, z) = p(\theta \mid y, \phi) \cdot p(\phi \mid
+y, z).$
+
+Cut was introduced to deal with the issue of not wanting information
+from $y$ to feed back into estimates of $\phi$.  Specifically, the
+case was pharmacokinetic/pharmacodynamic (PK/PD) models where $\phi$
+are the well understood and well specified PK (metabolic) parameters
+and $\theta$ are the less well specified PD (disease response)
+parameters, with $z$ being PK data and $y$ being PD data.  The issue
+that comes up is that $p(\phi \mid z)$ leads to the "correct"
+posterior for $\phi$, but when we then try to use $\phi$ to inform the
+PD model $p(y \mid \theta, \phi)$ in a fully Bayesian model,
+information from the PD model distorts the estimate of the PK parameters
+$\phi$ beyond reasonable values.  Cut mitigates this problem by
+blocking the ability of $y$ to feedback to $\phi$.
+
+Cut can be implemented exactly through *multiple imputation*.  The
+algorithm first samples multiple values $\phi^{(m)} \sim p(\phi \mid
+z)$ for $m < M$ and then for each draw $\phi^{(m)}$ it takes one or
+more *exact* draws $\theta^{(m)} \sim p(\theta \mid
+\phi^{(m)}$.  The sequence of draws $\phi^{(m)}, \theta^{(m)}$ is from
+the cut posterior, which drops the $y$ in the conditioning of $\phi$,
+
+$p(\theta, \phi \mid y, z) =  p(\theta \mid y, \phi) \cdot p(\phi \mid
+z).$
 
 The simplest example of cut would assume we have some calibration data
 for sensitivity $(N^\text{sens}, n^\text{sens})$ and for specificity
 $(N^\text{spec}, N^\text{spec})$, which we can model as binomial, e.g.,
 $n^\text{sens} \sim \textrm{binomial}(\textit{sens}, N^\text{sens})$,
 where $\textit{sens} \in (0, 1)$ is the sensitivity parameter.
+Although both sensitivity/specificity and prevalence are estimated,
+the prevalnce data is not used to inform sensitivity and specificity
+estimates.
 
 ```stan 
 data {
@@ -215,7 +283,7 @@ parameters {
   real<lower=0, upper=1> spec_cut;
 }
 latent data {
-  // cuts inference to sens and spec
+  // cuts inference to sens and spec from data n of N
   real sens = sens_cut;
   real spec = spec_cut;
 }
@@ -240,7 +308,7 @@ on `sens_cut` and `spec_cut` in the previous iteration.  Assigning to
 `sens` and to `spec` cuts feedback to `sens_cut` and `spec_cut`.
 
 
-## Multiple imputation for missing data
+### Multiple imputation for missing data
 
 One standard approach to multiple imputation is to use an imputation
 model on the data, then propgate multiple data sets through to
@@ -291,13 +359,13 @@ The result will be a multiple imputation, not a coherent joint
 Bayesian model.  This will work even if the missing data is discrete
 or the conditional distributions are not coherent. 
 
-## Stochastic gradient descent
+### Stochastic gradient descent (and sampling)
 
 The usual model in Stan evaluates the likelihood for the given data
-set and a prior.  There has, until now, never been a good way to do
-stochastic gradient descent over subsampled data.  Now we can do
-that.  This is the simplest possible example.  Suppose we start with
-this model.
+set and a prior.  There ois no way within Stan currently to do
+stochastic gradient descent over subsampled data.  With pre-model
+generated quantities, we can do that.  Here's the standard Stan model
+from which we will work.
 
 ```stan
 data {
@@ -315,7 +383,8 @@ model {
 
 We can move to stochastic gradient descent by randomly subsampling `y`
 in the `latent data` block.  As we do this, it's traditional to
-scale the likelihood to match the original data size.
+scale the likelihood to match the original data size and to scale down
+the prior.
 
 
 ```stan
@@ -325,9 +394,8 @@ data {
   array[N] int<lower=0, upper=1> y;
 }
 transformed data {
-  real one_over_N_sub = 1.0 / N_sub;
-  real N_over_N_sub = N * one_over_N_sub;
-  simplex[N_sub] unif = rep_vector(one_over_N_sub, N_sub);
+  real data_frac = 1.0 * N_sub / N;
+  simplex[N_sub] unif = rep_vector(1.0 / N_sub, N_sub);
 }
 parameters {
   real<lower=0, upper=1> theta;
@@ -339,14 +407,17 @@ latent data {
   }
 }
 model {
-  theta ~ beta(5, 5);
-  # scale data weight to match population size
-  target += N_over_N_sub * bernoulli_lpmf(y_sub | theta);
+  // prior scaled to size of data subset
+  target += data_frac * beta_lpdf(theta | 5, 5);
+  y_sum ~ bernoulli(theta);
 }
 ```
 
 If you plug this model into optimization, by default it will apply
-quasi-Newton steps using stochastic gradient.
+quasi-Newton steps using stochastic gradient.  If you plug this model
+into sampling, it will perform stochastic HMC (with acceptance
+governed by subsets).  Note that stochastic HMC will *not* converge to
+the exact target density because of the randomness.
 
 
 # Reference-level explanation
@@ -370,13 +441,6 @@ parameters, and generated quantities, the latent data will be included
 in the output and the top-level variables will be available in all
 later blocks.  Latent data will also have access to the data,
 transformed data, parameters, and transformed parameters.
-
-#### Iteration number 
-
-The iteration number can be optionally set in the latent data block 
-from the outside.  There will be an `iteration_number__` parameter 
-reserved.  It will be set to 0 by default, but can be updated by an 
-external algorithm. 
 
 ### Program Execution for latent data
 
@@ -448,6 +512,95 @@ For reference, here are links to the full definitions from the
 
 * [`model_base.hpp`](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base.hpp)
 * [`model_base_crtp.hpp`](https://github.com/stan-dev/stan/blob/develop/src/stan/model/model_base_crtp.hpp)
+
+### Allocator for latent data
+
+The structure of the latent data will be represetnted as a class
+inside the generated model class.
+
+```cpp
+struct latent_data {
+  // Will hold memory owned by allocator
+  Eigen::Map<Eigen::Matrix<double, -1, 1>> sens; 
+  std::vector<double, stan::math::local_allocator> spec;  
+};
+```
+
+For the allocator, we will then also make a member function in the
+model block that will tell us the size of the latent data struct. 
+
+```cpp
+std::size_t get_latent_size_bytes() {
+  // Assume `sens` is size 5 and spec is size 6
+  return sizeof(latent_data) + 5 * sizeof(double) + 6 * sizeof(double);
+}
+```
+
+The allocator will look very similar to Stan's arena allocator, but
+instead of storing a vector of unsigned char pointers this will only
+store one void pointer. We will use just one void pointer so that it's
+easy to cast the memory inside of the allocator to the `latent_data`
+class when we need it.
+
+```cpp
+struct local_allocator {
+  void* mem_;  // Must be fixed size
+
+  local_allocator(std::size_t init_bytes) : mem_(malloc(init_bytes));
+
+  template<typename T>
+  void* allocate(std::size_t amount);
+
+  template <typename T>
+  T* cast_this() {
+    return reinterpret_cast<T*>(mem_);
+  }
+};
+```
+
+Since the sizes of variables have to come from data and transformed
+data we can know at initialization the amount of memory that will be
+needed.
+
+```cpp
+stan::math::local_allocator latent_alloc(model->get_latent_size_bytes());
+```
+
+Then the model class will have a `latent_data` member function (i.e.,
+method) that uses the allocator as an in/out parameter
+
+```cpp
+inline void
+set_latent_data(stan::math::allocator& alloc) {
+  latent_data* = new (alloc.allocate<latent_data>()) latent_data{
+    0, 
+    Eigen::Map<Eigen::Matrix<double, -1, 1>>(
+      new (alloc.allocate<double>(5), 5, 1)),
+    std::vector<double, stan::math::allocator>(5, alloc)
+  };
+  // Fill in latent_data...
+  return;
+}
+```
+
+So now we can have a new `log_prob` that can take in the allocator. The
+`log_prob` will call the allocators cast function to get back the
+pointer to the `latent_data`. We can either use the latent_data pointer
+for the rest of the code or pull out references to the members of
+`latent_data`.
+
+```cpp
+auto log_prob(stan::math::allocator& alloc, ...) {
+  latent_data* = alloc.cast<latent_data>();
+  auto&& spec = latent_data->spec;  // low-cost reference
+
+  // Rest of the program written as normal
+  auto X = Y * spec;
+}
+```
+
+With this scheme the model class would also have new member functions
+for printing latent data names and latent data sizes, etc. 
 
 ### Representing the latent data
 
@@ -535,8 +688,8 @@ evaluation.
 
 ### The `latent_data_base` class
 
-The `latent_data_base` class will only know about how to write
-iteration numbers and how to write out variables and variable names.
+The `latent_data_base` class will only know about how to 
+write out variables and variable names.
 
 ```cpp
 class latent_data_base {
@@ -653,7 +806,8 @@ use multiple imputation in the traditional way by running multiple
 Stan programs in sequence. This is less efficient and not as general.
 
 There is no alternative for the Gibbs-based discrete parameter
-inference. 
+inference other than marginalization, which can be intractable in a
+lot of cases.
 
 ## Impact of not implementing
 
@@ -665,7 +819,15 @@ imputation.
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-None known.
+## Iteration number
+
+This isn't unresolved per se, but it's a closely related proposal.
+The iteration number can be optionally set in the latent data block  
+from the outside.  There will be an `iteration_number__` parameter  
+reserved.  It will be set to 0 by default, but can be updated by an  
+external algorithm.
+
+ None known.
 
 
 # Citations
