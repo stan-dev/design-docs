@@ -104,12 +104,100 @@ model {
 ```
 
 
+## Mixing truncated distributions
+
+When two truncated distributions are mixed, it is important to include
+the normalization constants.
+
+
+### Proposal for native truncation syntax
+in the situation where `mu`, `sigma`, and `lambda` are parameters.
+
+```stan
+real<lower=0> alpha;
+
+alpha ~ mixture(p,
+                normal(mu, sigma) T[0, ],
+                exponential(lambda));
+```
+
+Using truncation in this way will probably require extra work on
+the parser side in order to make `normal(mu, sigma) T[0, ]` a node in
+the syntax tree.  Stan does *not* currently support statements of the
+form
+
+```stan 
+target += normal_lupdf(alpha | mu, sigma) T[0, ]; 
+```
+
+Instead, you have to do the following.
+
+```stan 
+target += normal_lupdf(alpha | mu, sigma) 
+          - normal_ccdf(0 | mu, sigma);
+```
+
+### Alternative without new truncation syntax
+
+We can avoid having to have the `T[0, ]` syntax by instead requiring
+the user to define their own function,
+
+```stan
+real normal_lb_lpdf(real mu, real sigma, real lb) {
+  return normal_lupdf(alpha | mu, sigma) 
+          - normal_ccdf(lb | mu, sigma);
+}
+```
+
+With this, the above would be coded as
+
+```stan
+alpha ~ mixture(p,
+                normal_lb(mu, sigma, 0),
+                exponential(lambda));
+```
+
+We will probably start without implementing the new truncation
+syntax. 
+
+
+## Mixing continuous and discrete distributions
+
+It is incoherent to directly mix continuous and discrete
+distributions.  That is, we do *not* want to do something like the
+following.
+
+```
+int<lower=0> y;
+
+y ~ mixture(p,
+            poisson(lambda1),
+            exponential(lambda2));
+```
+
+The problem here is that there is no type to assign the mixture.  In
+these cases of mismatched types, we want to raise a compiler error.
+
+Technically, the continuity can be eliminated by defining a new
+discrete distribution that delegates to the exponential by promotion.
+
+```stan
+real exponential_int_lpdf(int y, real lambda) {
+  return exponential_lpdf(y | lambda);
+}
+```
+
+To make this coherent, the sum of densities of valid `y` needs to be
+finite. In this case, the requirement is $\sum_{n \in \mathbb{N}}
+\textrm{exponential}(n | \lambda) < \infty.$  This is not something we
+can enforce through Stan, but is something we should be documenting.
+
 ## Mixtures with more than two components
 
 Up until now, we have assumed two mixture components and a probability
 argument.  In general, we want to allow more than two mixture
 components.  The proposal is to have the first argument be a syntax
-whose  size determines the numnber of remaining arguments.  For
+whose  size determines the number of remaining arguments.  For
 example, the following would be a legal way to define a 3-component mixture.
 
 ```stan
@@ -192,7 +280,7 @@ To handle that, we propose to change the exception thrown in the math
 library to a subclass of `std::invalid_argument` which we will call
 `stan::math::invalid_variate`.  This is a simple change in the math
 lib for type of exception thrown and will not break backward
-compatiblity. 
+compatibility. 
 
 # Drawbacks
 
@@ -220,9 +308,48 @@ This proposal is not intended to address infinite mixtures, like a gamma-Poisson
 Prior art is basically just `log_mix` and some examples of how to code
 by hand in the mixtures chapter of the *User's Guide*.
 
-I am not aware of other probabilistic programming languages that
-include this feature.  This is way too small of a feature for a paper.
+#### PyMC
 
+PyMC provides a distribution class
+[`pymc.Mixture`](https://www.pymc.io/projects/docs/en/stable/api/distributions/generated/pymc.Mixture.html)
+ Here's the first example from their documentation.
+
+```python
+with pm.Model() as model:
+    w = pm.Dirichlet("w", a=np.array([1, 1]))  # 2 mixture weights
+
+    lam1 = pm.Exponential("lam1", lam=1)
+    lam2 = pm.Exponential("lam2", lam=1)
+
+    # As we just need the logp, rather than add a RV to the model, we need to call `.dist()`
+    # These two forms are equivalent, but the second benefits from vectorization
+    components = [
+        pm.Poisson.dist(mu=lam1),
+        pm.Poisson.dist(mu=lam2),
+    ]
+    # `shape=(2,)` indicates 2 mixture components
+    components = pm.Poisson.dist(mu=pm.math.stack([lam1, lam2]), shape=(2,))
+
+    like = pm.Mixture("like", w=w, comp_dists=components,
+    observed=data)
+	```
+
+This creates a two-component mixture of Poisson distributions.
+
+#### Turing.jl
+
+`Turing.jl` provides a class
+[`MixtureModel`](https://turinglang.org/docs/tutorials/gaussian-mixture-models/).
+Here's an example of its use.
+
+```julia
+w = [0.5, 0.5]
+mu = [-3.5, 0.5]
+mixturemodel = MixtureModel([MvNormal(Fill(mu_k, 2), I) for mu_k in mu], w)
+```
+
+This creates a two-component mixture of two-dimensional isotropic
+Gaussians (`I` is the identity matrix imported from `LinearAlgebra`).
 
 # Resolved questions
 
