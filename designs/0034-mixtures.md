@@ -143,7 +143,7 @@ We can avoid having to have the `T[0, ]` syntax by instead requiring
 the user to define their own function,
 
 ```stan
-real normal_lb_lpdf(real mu, real sigma, real lb) {
+real normal_lb_lpdf(real alpha, real mu, real sigma, real lb) {
   return normal_lupdf(alpha | mu, sigma) 
           - normal_ccdf(lb | mu, sigma);
 }
@@ -167,7 +167,7 @@ It is incoherent to directly mix continuous and discrete
 distributions.  That is, we do *not* want to do something like the
 following.
 
-```
+```stan
 int<lower=0> y;
 
 y ~ mixture(p,
@@ -189,8 +189,8 @@ real exponential_int_lpdf(int y, real lambda) {
 
 To make this coherent, the sum of densities of valid `y` needs to be
 finite. In this case, the requirement is $\sum_{n \in \mathbb{N}}
-\textrm{exponential}(n | \lambda) < \infty.$  This is not something we
-can enforce through Stan, but is something we should be documenting.
+\textrm{exponential}(n | \lambda) < \infty.$  This is not something
+that can be enforced through Stan, but it should be documented.
 
 ## Mixtures with more than two components
 
@@ -234,6 +234,10 @@ The `log_mix` function is slightly different than the `mixture`
 distribution and while it could be deprecated in favor of `mixture`,
 it would also make sense to keep it.
 
+Like this proposal, the `log_mix` function requires truncated
+distributions or mixtures of discrete and continuous distributions to
+be finessed through writing a user-defined function of the appropriate
+type ending in `_lpdf` or `_lpmf`.
 
 
 # Reference-level explanation
@@ -332,7 +336,7 @@ with pm.Model() as model:
 
     like = pm.Mixture("like", w=w, comp_dists=components,
     observed=data)
-	```
+```
 
 This creates a two-component mixture of Poisson distributions.
 
