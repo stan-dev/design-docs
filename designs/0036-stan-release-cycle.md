@@ -221,6 +221,9 @@ number in the same way.
   reduce the overhead, but increase the risk of large changes causing breakages
   that are hard to debug and introduce additional wait time for users to get
   access to new features and bug fixes.
+- We could do a mixed release cycle, where we have some cycle defining the maximum
+  time between releases (say 6 months), but allow for releases to occur earlier
+  if there are sufficient changes merged.
 
 # Prior art
 
