@@ -65,7 +65,7 @@ The release process proceeds in stages:
 ### One week before release date (start of feature freeze)
 
 - Release candidates are published for each of the four packages.
-- A forumn announcement calling for testing of the release candidates is made.
+- A forum announcement calling for testing of the release candidates is made.
 
 After the release candidates are published, there is a fork in the process depending
 on whether any critical issues are found during testing.
@@ -133,7 +133,7 @@ waiting longer for fixes that may have been ready to go for some time.
 
 A simple list of things that should always be considered critical issues is:
 
-- Compilation failures on on supported platforms, especially if the same code previously compiled.
+- Compilation failures on supported platforms, especially if the same code previously compiled.
 - Major performance regressions in core functionality.
 - Incorrect results, particularly if previous releases were correct.
 
