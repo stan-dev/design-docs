@@ -151,16 +151,19 @@ The v1 stanbin format consists of four sections:
 | 12 | 4 | uint32 | Flags (`0` in v1; reserved for extensions) |
 | 16 | 8 | uint64 | Number of rows (draws) |
 | 24 | 8 | uint64 | Number of columns (parameters) |
-| 32 | 4 | uint32 | Data section offset in bytes (`64 + names_size` in v1) |
+| 32 | 4 | uint32 | Data section offset in bytes (8-byte aligned; `64 + ((names_size + 7) / 8) * 8` in v1) |
 | 36 | 4 | uint32 | Names section size in bytes |
 | 40 | 4 | uint32 | Layout parameter (`0` = row-major in v1; non-zero values reserved for extensions such as chunking) |
 | 44 | 8 | uint64 | Metadata section offset (`0` if file not yet finalized) |
-| 52 | 8 | uint64 | Metadata section size in bytes |
-| 60 | 4 | reserved | Reserved for future use |
+| 52 | 4 | uint32 | Metadata section size in bytes |
+| 56 | 8 | reserved | Reserved for future use |
 
-All integers are little-endian. The field at offset `32` is intentionally the byte offset of the data section, so the file remains self-describing even though the names section is variable length.
+All integers are little-endian.
+The field at offset `32` is intentionally the byte offset of the data section, so the file remains self-describing even though the names section is variable length.
+In v1, writers must choose `data_offset` so that the data section begins on an 8-byte boundary.
 
-The `cols` field is kept explicitly even though a reader could derive the number of columns by counting null-terminated names. Storing it in the header makes validation and allocation simpler, and `uint64` is already large enough that it does not impose a meaningful practical limit on the number of columns.
+The `cols` field is kept explicitly even though a reader could derive the number of columns by counting null-terminated names.
+Storing it in the header makes validation and allocation simpler, and `uint64` is already large enough that it does not impose a meaningful practical limit on the number of columns.
 
 ### 2. Names Section (variable size)
 
@@ -169,6 +172,9 @@ Null-terminated UTF-8 strings, one per column:
 ```
 lp__\0accept_stat__\0stepsize__\0...theta.1\0theta.2\0...
 ```
+
+If needed, the names section is followed by zero padding bytes so that `data_offset` is 8-byte aligned.
+These padding bytes are not counted in `names_size`.
 
 ### 3. Data Section (variable size, row-major)
 
@@ -198,19 +204,22 @@ This section contains UTF-8 text which mirrors the non-draw lines from CmdStan's
 - Comment lines beginning with `# ` (configuration, adaptation messages, timing)
 - Exactly one CSV header line (comma-separated column names) with no leading `#`
 
-The section is written after the data section so writers can stream draws without interleaving text. Readers use `metadata_offset` and `metadata_size` from the header to locate and parse the metadata.
+The section is written after the data section so writers can stream draws without interleaving text.
+Readers use `metadata_offset` and `metadata_size` from the header to locate and parse the metadata.
 
 ## Finalization Semantics
 
 A writer creates the file in this order:
 
-1. Write a provisional header.
-2. Write the names section.
+1. Write a provisional header with `rows = 0` and `metadata_offset = 0`.
+2. Write the names section and any zero padding needed to make `data_offset` 8-byte aligned.
 3. Stream each draw row directly into the data section.
 4. Write the trailing metadata section.
 5. Seek back and rewrite the header with the final row count and metadata location.
 
-If a run terminates before step 5, the file is incomplete. Readers can detect this by checking whether `metadata_offset == 0`: a finalized file always has a non-zero metadata offset because the metadata section is required in v1. A reader that wants to attempt partial recovery from an incomplete file can compute the number of usable rows from the file size:
+If a run terminates before step 5, the file is incomplete.
+Readers can detect this by checking whether `metadata_offset == 0`: a finalized file always has a non-zero metadata offset because the metadata section is required in v1.
+A reader that wants to attempt partial recovery from an incomplete file can compute the number of usable rows from the file size:
 
 ```
 recoverable_rows = floor((file_size - data_offset) / (num_cols * 8))
@@ -245,9 +254,13 @@ That extension would improve some analysis workloads, but it also introduces que
 
 ## Implementation
 
-The current prototype implementations in `cmdstan` and `cmdstanr` already exercise much of the proposed container shape: the magic/versioned 64-byte header, null-terminated names section, and trailing metadata block are all present. However, the prototype code still uses the earlier **chunked** data layout.
+The current prototype implementations in `cmdstan` and `cmdstanr` already exercise much of the proposed container shape: the magic/versioned 64-byte header, null-terminated names section, and trailing metadata block are all present.
+However, the prototype code still uses the earlier **chunked** data layout.
 
 If this RFC lands with a row-major base format, the existing prototype can be viewed as implementation prior art for a future chunked extension, while the base v1 reader/writer become simpler because they can stream rows directly.
+
+The code snippets below are illustrative.
+Concrete implementations can expose richer error reporting than the simple boolean examples shown here.
 
 ### Target writer shape for the row-major base format
 
@@ -257,14 +270,16 @@ The base-format writer can remain small:
 class stanbin_writer : public stan::callbacks::writer {
  public:
   void operator()(const std::vector<double>& state) override {
-    write_row(state);
-    ++num_rows_;
-    update_rows_in_header(num_rows_);
+    if (write_row(state)) {
+      ++num_rows_;
+    }
   }
 
-  void finalize() {
-    write_metadata();
-    rewrite_header();
+  bool finalize() {
+    if (!write_metadata()) {
+      return false;
+    }
+    return rewrite_header(num_rows_);
   }
 };
 ```
@@ -275,17 +290,22 @@ class stanbin_writer : public stan::callbacks::writer {
 <summary>V1 row-major writer excerpt</summary>
 
 ```cpp
-void operator()(const std::vector<double>& state) override {
-  // Row-major: write each draw directly, no buffering or transposition
+bool write_row(const std::vector<double>& state) {
   stream_.write(reinterpret_cast<const char*>(state.data()),
                 state.size() * sizeof(double));
-  ++num_rows_written_;
-  update_rows_in_header(num_rows_written_);
+  return static_cast<bool>(stream_);
+}
+
+void operator()(const std::vector<double>& state) override {
+  // Row-major: write each draw directly, no buffering or transposition
+  if (write_row(state)) {
+    ++num_rows_written_;
+  }
 }
 
 void update_header_fields(uint64_t rows, uint64_t cols, uint32_t data_offset,
                           uint32_t names_size, uint32_t layout,
-                          uint64_t metadata_offset, uint64_t metadata_size) {
+                          uint64_t metadata_offset, uint32_t metadata_size) {
   stream_.seekp(12);
   uint32_t flags = 0;
   stream_.write(reinterpret_cast<const char*>(&flags), 4);
@@ -295,13 +315,14 @@ void update_header_fields(uint64_t rows, uint64_t cols, uint32_t data_offset,
   stream_.write(reinterpret_cast<const char*>(&names_size), 4);
   stream_.write(reinterpret_cast<const char*>(&layout), 4);
   stream_.write(reinterpret_cast<const char*>(&metadata_offset), 8);
-  stream_.write(reinterpret_cast<const char*>(&metadata_size), 8);
+  stream_.write(reinterpret_cast<const char*>(&metadata_size), 4);
 }
 ```
 
 </details>
 
-The field at offset `32` is the data section byte offset (`64 + names_size`), keeping the file self-describing. The `layout` field at offset `40` is `0` for row-major v1.
+The field at offset `32` is the data section byte offset (`64 + ((names_size + 7) / 8) * 8`), keeping the file self-describing.
+The `layout` field at offset `40` is `0` for row-major v1.
 
 ### Target reader shape for the row-major base format
 
@@ -320,13 +341,15 @@ read_stanbin_header_ <- function(con) {
   names_size <- readBin(con, what = integer(), n = 1, size = 4, endian = "little")
   layout <- readBin(con, what = integer(), n = 1, size = 4, endian = "little")
   metadata_offset <- readBin(con, what = integer(), n = 1, size = 8, endian = "little")
-  metadata_size <- readBin(con, what = integer(), n = 1, size = 8, endian = "little")
+  metadata_size <- readBin(con, what = integer(), n = 1, size = 4, endian = "little")
 }
 ```
 
 </details>
 
-This excerpt shows what downstream readers already expect: explicit `rows`, `cols`, `names_size`, a data offset, and trailing metadata offsets. The field names here (`data_offset`, `layout`) match the proposed v1 header table. Note that the `uint64` fields (`rows`, `cols`, `metadata_offset`, `metadata_size`) are read with `what = integer(), size = 8`: R has no native 64-bit integer type, so `readBin` returns the value as a double, which is exact for values up to 2^53.
+This excerpt shows what downstream readers already expect: explicit `rows`, `cols`, `names_size`, a data offset, and trailing metadata offsets.
+The field names here (`data_offset`, `layout`) match the proposed v1 header table.
+Note that the `uint64` fields (`rows`, `cols`, `metadata_offset`) are read with `what = integer(), size = 8`: R has no native 64-bit integer type, so `readBin` returns the value as a double, which is exact for values up to 2^53.
 
 ## Integration with CmdStan
 
@@ -345,7 +368,9 @@ When `format=stanbin`:
 
 - Output file uses `.stanbin` extension
 - Draws are written in row-major order using `stanbin_writer` instead of the CSV stream writer
+- v1 targets full writer-backed coverage rather than partial algorithm support
 - All sampling algorithms (NUTS, static HMC, fixed_param) are supported
+- Diagnostic output should follow the same format selection instead of leaving a mixed CSV/stanbin path
 
 If a chunked extension is adopted later, it can introduce additional layout-specific configuration at that time.
 
@@ -362,9 +387,9 @@ Columns appear in the same order as CSV output:
 # Drawbacks
 [drawbacks]: #drawbacks
 
-1. Not human-readable: Unlike CSV, stanbin files cannot simply be inspected with a text editor. Users must use provided reader functions.
+1. Not readily human-readable with ordinary text tools: Unlike CSV, stanbin files cannot simply be inspected with a text editor. Users typically need reader functions or binary inspection tools.
 
-2. Tool ecosystem: Existing tools (stansummary, arviz, etc.) expect CSV format. These would need updates to support stanbin.
+2. Tool ecosystem: Existing tools (stansummary, arviz, etc.) expect CSV format. These would need updates to support stanbin, though a companion `cmdstan/bin/stanbin2csv` utility can provide an interoperability bridge.
 
 3. Endianness: The format assumes little-endian byte order. While this covers most modern systems, big-endian systems would need byte-swapping.
 
@@ -451,19 +476,17 @@ From Stan community feedback: Minimal dependencies are a requirement for adoptio
 
 ## To resolve before merging this RFC
 
-1. Should the diagnostic file also support stanbin output in v1, or should it remain CSV/JSON only? The current proposal excludes it, but reviewers may want a unified binary path.
+1. Should stanbin become the default output format in a future CmdStan release, or remain opt-in indefinitely?
 
-2. Should stanbin become the default output format in a future CmdStan release, or remain opt-in indefinitely?
-
-3. Is the trailing metadata section (raw CSV comment text) the right long-term metadata representation, or should v1 adopt a structured format (e.g., key-value pairs) from the start?
+2. Is the trailing metadata section (raw CSV comment text) the right long-term metadata representation, or should v1 adopt a structured format (e.g., key-value pairs) from the start?
 
 ## To resolve during implementation
 
 1. Multi-chain file handling: CmdStan writes one file per chain (same as CSV). The exact filename template behavior (suffix replacement, chain ID insertion) needs to be confirmed against current CmdStan conventions.
 
-2. Finalization edge cases: The writer rewrites the header on successful close. The behavior when sampling is interrupted (e.g., SIGINT during warmup) should be tested to confirm that readers can detect and recover from incomplete files via `metadata_offset == 0`.
+2. Finalization edge cases: The writer leaves `rows = 0` and `metadata_offset = 0` until successful close. The behavior when sampling is interrupted (e.g., SIGINT during warmup) should be tested to confirm that readers can detect and recover from incomplete files via `metadata_offset == 0`.
 
-3. Integration scope: Which sampling algorithms are tested and supported at initial release.
+3. Full coverage validation: `format=stanbin` should be wired through all supported writer-backed sample and diagnostic output paths and validated across NUTS, static HMC, and fixed_param.
 
 ## Out of scope for this RFC
 
