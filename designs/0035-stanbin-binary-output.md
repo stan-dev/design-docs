@@ -173,7 +173,7 @@ Null-terminated UTF-8 strings, one per column:
 lp__\0accept_stat__\0stepsize__\0...theta.1\0theta.2\0...
 ```
 
-If needed, the names section is followed by zero padding bytes so that `data_offset` is 8-byte aligned.
+If needed, the names section is followed by padding null bytes so that `data_offset` is 8-byte aligned.
 These padding bytes are not counted in `names_size`.
 
 ### 3. Data Section (variable size, row-major)
