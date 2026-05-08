@@ -6,8 +6,8 @@ community has the transparency it needs to collaborate effectively.
 
 ## Human Accountability
 
-Every pull request (PR) must be submitted by a named individual who assumes full
-responsibility for the contribution. While we recognize that automation and AI
+Every pull request (PR) must be submitted by a named individual who is 
+responsible for the contribution. While we recognize that automation and AI
 can be part of a modern workflow, we do not accept fully automated or agentic
 submissions.
 
@@ -25,10 +25,9 @@ and that they hold or have cleared the rights to submit it.
 To maintain transparency and trust within our community, contributors are
 required to disclose whether AI tools were used in preparing their contribution.
 We included a corresponding mandatory section in the GitHub PR template. If AI
-tools were used, the contributor additionally affirms that they have reviewed
-every change, fully understand the logic and security implications, and are
-prepared to explain or defend the technical decisions therein during the review
-process.
+tools were used, the contributor additionally affirms that they have reviewed 
+and understood the code, and can explain and defend their changes during the 
+review process.
 
 ### Acknowledgement
 This policy was inspired by the
@@ -38,7 +37,7 @@ and developed with the practical guidance and support of
 
 ---
 
-This policy is effective as of [date].
+This policy is effective as of May 2026.
 
 Questions or suggestions? Join the discussion in our
 [community channel](https://discourse.mc-stan.org).
