@@ -11,6 +11,17 @@ responsible for the contribution. While we recognize that automation and AI
 can be part of a modern workflow, we do not accept fully automated or agentic
 submissions.
 
+## No copy-pasted LLM output text
+
+All interactions with maintainers (in issues, PR descriptions or comments) must be
+written by you, the human contributor. 
+
+This policy is in place to avoid our maintainers needing to sift through long, possibly 
+hallucinated, explanations, and to restore the expectation that effort spent reading is
+matched by the effort the author spent producing the text.
+Being able to give a concise description of the problem and/or solution also demonstrates 
+that you can take responsibility for the changes as required by this policy.
+
 ## Licensing and Copyright
 
 Every contributor must agree to the
@@ -34,6 +45,9 @@ This policy was inspired by the
 [CloudNativePG AI Policy](https://github.com/cloudnative-pg/governance/blob/main/AI_POLICY.md)
 and developed with the practical guidance and support of
 [NumFOCUS](https://numfocus.org) in creating the initial draft.
+
+The requirements for interactions to be human-written was inspired by the 
+[Tree Sitter project's AI Policy](https://tree-sitter.github.io/tree-sitter/6-contributing.html#ai-policy).
 
 ---
 
